@@ -70,7 +70,7 @@ def test_loop_prefers_green_edges():
     assert route.green_fraction > 0.7
 
 
-def test_weight_prefers_longer_green_path():
+def test_search_prefers_longer_green_path():
     graph = nx.MultiDiGraph()
     _add_node(graph, "a", *CENTER)
     _add_node(graph, "b", *_offset(*CENTER, 0, 200))
@@ -79,7 +79,7 @@ def test_weight_prefers_longer_green_path():
     _connect(graph, "a", "via", 150, "footway")
     _connect(graph, "via", "b", 150, "footway")
     scoring.score_graph(graph)
-    path = nx.shortest_path(graph, "a", "b", weight=loop._weight_fn(set()))
+    path = loop._shortest_path(graph, "a", "b")
     assert path == ["a", "via", "b"]  # 300 m green beats 200 m main road
 
 
@@ -90,6 +90,34 @@ def test_out_and_back_fallback_on_line():
     assert route.length_m == pytest.approx(3000.0)
     assert route.coords[0] == route.coords[-1]
     assert route.warnings
+    assert route.sharp_turns == 1  # only the turnaround
+
+
+def zigzag_graph() -> nx.MultiDiGraph:
+    """Two ways A->B: a zigzag shorter on paper, and a slightly longer straight chain."""
+    graph = nx.MultiDiGraph()
+    _add_node(graph, "A", *CENTER)
+    _add_node(graph, "B", *_offset(*CENTER, 0, 400))
+    # straight chain, 4 edges, weighted length 110 each = 440
+    chain = ["A", "s1", "s2", "s3", "B"]
+    for i, node in enumerate(chain[1:-1], start=1):
+        _add_node(graph, node, *_offset(*CENTER, 0, 100 * i))
+    for u, v in zip(chain, chain[1:]):
+        _connect(graph, u, v, 110, "residential")
+    # zigzag E,N,E,S,...: 8 edges with 7 right-angle turns, length 50 each = 400
+    corners = [(0, 100), (100, 100), (100, 200), (0, 200), (0, 300), (100, 300), (100, 400)]
+    zchain = ["A"] + [f"z{i}" for i in range(len(corners))] + ["B"]
+    for node, (north, east) in zip(zchain[1:-1], corners):
+        _add_node(graph, node, *_offset(*CENTER, north, east))
+    for u, v in zip(zchain, zchain[1:]):
+        _connect(graph, u, v, 50, "residential")
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_turn_penalties_prefer_straight_over_shorter_zigzag():
+    path = loop._shortest_path(zigzag_graph(), "A", "B")
+    assert path == ["A", "s1", "s2", "s3", "B"]
 
 
 def test_empty_graph_raises():

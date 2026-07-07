@@ -1,6 +1,11 @@
-// Loop search on a greenness-weighted graph — mirrors app/routing/loop.py.
+// Route search on a greenness-weighted graph — mirrors app/routing/loop.py.
 //
 // Graph shape: { nodes: Map<id, {lat, lng}>, adj: Map<id, [{to, length, w, green}]> }
+//
+// The search is turn-aware: Dijkstra runs over (arrived-from, node) states and
+// every transition pays a penalty scaled by the turn angle, so straight, smooth
+// paths are preferred over zigzags with the same length. Smooth curves cost
+// nothing because they are many small angles between consecutive OSM nodes.
 
 import { project } from "./geo.js";
 
@@ -11,6 +16,14 @@ const REUSE_PENALTY = 3.0;
 const AVOID_PENALTY = 2.5; // edges of already-shown routes, for "Alternate route"
 const MAX_ROUNDS = 3;
 const MIN_LEG_M = 250;
+
+// Turn penalties, in weighted meters added on top of the edge cost.
+const TURN_FREE_DEG = 35; // gentle bends are free
+const TURN_SHARP_DEG = 80;
+const TURN_REVERSE_DEG = 130;
+export const TURN_PENALTY_LIGHT = 8;
+export const TURN_PENALTY_SHARP = 25;
+export const TURN_PENALTY_REVERSE = 80;
 
 export class NoRouteError extends Error {}
 
@@ -56,39 +69,88 @@ class MinHeap {
 
 const pairKey = (u, v) => (u < v ? `${u}|${v}` : `${v}|${u}`);
 
+function bearingDeg(graph, u, v) {
+  const a = graph.nodes.get(u);
+  const b = graph.nodes.get(v);
+  const scale = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+  return (Math.atan2((b.lng - a.lng) * scale, b.lat - a.lat) * 180) / Math.PI;
+}
+
+function turnAngleDeg(b1, b2) {
+  const d = Math.abs(b1 - b2) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+export function turnPenalty(angleDeg) {
+  if (angleDeg < TURN_FREE_DEG) return 0;
+  if (angleDeg < TURN_SHARP_DEG) return TURN_PENALTY_LIGHT;
+  if (angleDeg < TURN_REVERSE_DEG) return TURN_PENALTY_SHARP;
+  return TURN_PENALTY_REVERSE;
+}
+
+// Per-node adjacency with bearing and pair key memoized on the edge entries —
+// the hot Dijkstra loop must not recompute trigonometry per relaxation.
+function preparedAdj(graph, u) {
+  const entries = graph.adj.get(u) ?? [];
+  for (const edge of entries) {
+    if (edge.bearing === undefined) {
+      edge.bearing = bearingDeg(graph, u, edge.to);
+      edge.pair = pairKey(u, edge.to);
+    }
+  }
+  return entries;
+}
+
+// Turn-aware Dijkstra over (arrived-from, node) states. State keys are
+// "from|node" ("" for the start's from); stateNode preserves original ids.
+// Heap items carry the arrival edge's bearing to avoid lookups.
 function dijkstra(graph, source, used = null, target = null, avoid = null) {
-  const dist = new Map([[source, 0]]);
-  const prev = new Map();
-  const done = new Set();
+  const startKey = `|${source}`;
+  const dist = new Map([[startKey, 0]]);
+  const prevState = new Map();
+  const stateNode = new Map([[startKey, source]]);
+  const settled = new Set();
   const heap = new MinHeap();
-  heap.push(0, source);
+  heap.push(0, [source, null, startKey, null]);
+  let targetKey = null;
   while (heap.size) {
-    const [d, u] = heap.pop();
-    if (done.has(u)) continue;
-    done.add(u);
-    if (u === target) break;
-    for (const edge of graph.adj.get(u) ?? []) {
+    const [d, [u, from, key, bearingIn]] = heap.pop();
+    if (settled.has(key)) continue;
+    settled.add(key);
+    if (u === target) {
+      targetKey = key;
+      break;
+    }
+    for (const edge of preparedAdj(graph, u)) {
+      if (edge.to === from) continue; // no immediate U-turns
       let w = edge.w;
-      const key = pairKey(u, edge.to);
-      if (used && used.has(key)) w *= REUSE_PENALTY;
-      if (avoid && avoid.has(key)) w *= AVOID_PENALTY;
+      if (used && used.has(edge.pair)) w *= REUSE_PENALTY;
+      if (avoid && avoid.has(edge.pair)) w *= AVOID_PENALTY;
+      if (bearingIn !== null) {
+        w += turnPenalty(turnAngleDeg(bearingIn, edge.bearing));
+      }
       const nd = d + w;
-      if (nd < (dist.get(edge.to) ?? Infinity)) {
-        dist.set(edge.to, nd);
-        prev.set(edge.to, u);
-        heap.push(nd, edge.to);
+      const stateKey = `${u}|${edge.to}`;
+      if (nd < (dist.get(stateKey) ?? Infinity)) {
+        dist.set(stateKey, nd);
+        prevState.set(stateKey, key);
+        stateNode.set(stateKey, edge.to);
+        heap.push(nd, [edge.to, u, stateKey, edge.bearing]);
       }
     }
   }
-  return { dist, prev, done };
+  return { dist, prevState, stateNode, settled, targetKey };
 }
 
-function shortestPath(graph, a, b, used, avoid) {
-  const { prev, done } = dijkstra(graph, a, used, b, avoid);
-  if (!done.has(b)) return null;
-  const path = [b];
-  while (path[path.length - 1] !== a) path.push(prev.get(path[path.length - 1]));
+function statePath(prevState, stateNode, key) {
+  const path = [];
+  for (let k = key; k !== undefined; k = prevState.get(k)) path.push(stateNode.get(k));
   return path.reverse();
+}
+
+export function shortestPath(graph, a, b, used, avoid) {
+  const { prevState, stateNode, targetKey } = dijkstra(graph, a, used, b, avoid);
+  return targetKey === null ? null : statePath(prevState, stateNode, targetKey);
 }
 
 function bestEdge(graph, u, v) {
@@ -108,6 +170,18 @@ function pathStats(graph, path) {
     if (edge.green) green += edge.length;
   }
   return { length, green };
+}
+
+function countSharpTurns(graph, path) {
+  let count = 0;
+  for (let i = 2; i < path.length; i++) {
+    const angle = turnAngleDeg(
+      bearingDeg(graph, path[i - 2], path[i - 1]),
+      bearingDeg(graph, path[i - 1], path[i])
+    );
+    if (angle >= TURN_SHARP_DEG) count++;
+  }
+  return count;
 }
 
 function edgePairs(path) {
@@ -197,47 +271,42 @@ function findLoop(graph, start, targetM, avoid) {
   return null;
 }
 
-// Greenest-path tree from the start: prev pointers plus true/green length per node,
-// accumulated in increasing weighted distance so parents come first.
+// Greenest-path tree from the start: per-state prev pointers plus true/green
+// length, accumulated in increasing weighted distance so parents come first.
 function greenestPathTree(graph, start, avoid) {
-  const { dist, prev } = dijkstra(graph, start, null, null, avoid);
-  const order = [...dist.keys()].sort((a, b) => dist.get(a) - dist.get(b));
-  const lengthTo = new Map([[start, 0]]);
-  const greenTo = new Map([[start, 0]]);
-  for (const node of order) {
-    if (node === start) continue;
-    const pred = prev.get(node);
-    const edge = bestEdge(graph, pred, node);
-    lengthTo.set(node, lengthTo.get(pred) + edge.length);
-    greenTo.set(node, greenTo.get(pred) + (edge.green ? edge.length : 0));
+  const tree = dijkstra(graph, start, null, null, avoid);
+  const order = [...tree.settled].sort((a, b) => tree.dist.get(a) - tree.dist.get(b));
+  const lengthTo = new Map([[`|${start}`, 0]]);
+  const greenTo = new Map([[`|${start}`, 0]]);
+  for (const key of order) {
+    const parent = tree.prevState.get(key);
+    if (parent === undefined) continue; // start state
+    const edge = bestEdge(graph, tree.stateNode.get(parent), tree.stateNode.get(key));
+    lengthTo.set(key, lengthTo.get(parent) + edge.length);
+    greenTo.set(key, greenTo.get(parent) + (edge.green ? edge.length : 0));
   }
-  return { prev, lengthTo, greenTo };
+  return { ...tree, lengthTo, greenTo };
 }
 
-// Node whose tree path best combines greenness with closeness to targetLen.
-function bestTreeNode(tree, start, targetLen) {
+// State whose tree path best combines greenness with closeness to targetLen.
+function bestTreeState(tree, start, targetLen) {
   let best = null;
-  for (const [node, length] of tree.lengthTo) {
+  for (const [key, length] of tree.lengthTo) {
+    const node = tree.stateNode.get(key);
     if (node === start || length === 0) continue;
     const deviation = Math.abs(length - targetLen) / targetLen;
-    const greenFraction = tree.greenTo.get(node) / length;
+    const greenFraction = tree.greenTo.get(key) / length;
     const score = greenFraction - 2 * deviation;
-    if (!best || score > best.score) best = { score, node, length, deviation, greenFraction };
+    if (!best || score > best.score) best = { score, key, length, deviation, greenFraction };
   }
   return best;
 }
 
-function treePath(tree, start, node) {
-  const path = [node];
-  while (path[path.length - 1] !== start) path.push(tree.prev.get(path[path.length - 1]));
-  return path.reverse();
-}
-
 function findOutAndBack(graph, start, targetM, avoid) {
   const tree = greenestPathTree(graph, start, avoid);
-  const best = bestTreeNode(tree, start, targetM / 2);
+  const best = bestTreeState(tree, start, targetM / 2);
   if (!best) throw new NoRouteError("no reachable route from the start point");
-  const out = treePath(tree, start, best.node);
+  const out = statePath(tree.prevState, tree.stateNode, best.key);
   const path = [...out, ...out.slice(0, -1).reverse()];
   return toResult(graph, path, best.length * 2, best.greenFraction, "out_and_back", [
     "no loop matched the requested distance; returning an out-and-back route",
@@ -248,7 +317,7 @@ function findOutAndBack(graph, start, targetM, avoid) {
 // greenest paths, ending away from the start.
 function findOneWay(graph, start, targetM, avoid) {
   const tree = greenestPathTree(graph, start, avoid);
-  const best = bestTreeNode(tree, start, targetM);
+  const best = bestTreeState(tree, start, targetM);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const warnings = [];
   if (best.deviation > LENGTH_TOLERANCE) {
@@ -257,8 +326,8 @@ function findOneWay(graph, start, targetM, avoid) {
         `(${Math.round(best.deviation * 100)}% off the requested distance)`
     );
   }
-  return toResult(graph, treePath(tree, start, best.node), best.length, best.greenFraction,
-    "one_way", warnings);
+  const path = statePath(tree.prevState, tree.stateNode, best.key);
+  return toResult(graph, path, best.length, best.greenFraction, "one_way", warnings);
 }
 
 function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
@@ -266,12 +335,20 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     const p = graph.nodes.get(n);
     return [p.lat, p.lng];
   });
-  return { coords, lengthM, greenFraction, routeType, warnings, pairs: [...edgePairs(path)] };
+  return {
+    coords,
+    lengthM,
+    greenFraction,
+    routeType,
+    warnings,
+    pairs: [...edgePairs(path)],
+    sharpTurns: countSharpTurns(graph, path),
+  };
 }
 
+// shape: "loop" (default) or "straight" (one-way, ends away from the start).
 // avoid: Set of edge pair-keys (from previous results' `pairs`) to steer away
 // from, so "Alternate route" produces a genuinely different loop.
-// shape: "loop" (default) or "straight" (one-way, ends away from the start).
 export function planRoute(graph, lat, lng, targetM, avoid = null, shape = "loop") {
   if (graph.nodes.size < 2) {
     throw new NoRouteError("no walkable paths found around the start point");

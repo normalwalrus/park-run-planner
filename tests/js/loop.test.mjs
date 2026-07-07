@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { planRoute, NoRouteError, RELAXED_TOLERANCE } from "../../docs/js/loop.js";
+import { planRoute, shortestPath, NoRouteError, RELAXED_TOLERANCE } from "../../docs/js/loop.js";
 import { edgeFactor, GREEN_FACTOR } from "../../docs/js/scoring.js";
 
 const CENTER = [1.0, 103.0];
@@ -75,6 +75,36 @@ test("out-and-back fallback on a line", () => {
   assert.ok(Math.abs(route.lengthM - 3000) < 1e-6);
   assert.deepEqual(route.coords[0], route.coords[route.coords.length - 1]);
   assert.ok(route.warnings.length > 0);
+  assert.equal(route.sharpTurns, 1); // only the turnaround
+});
+
+// Two ways from A to B: a zigzag that is shorter on paper and a straight chain
+// that is slightly longer. Turn penalties must favor the straight one.
+function zigzagGraph() {
+  const graph = makeGraph();
+  addNode(graph, "A", CENTER);
+  addNode(graph, "B", offset(...CENTER, 0, 400));
+  // straight chain, 4 edges, weighted length 110 each = 440
+  const straight = ["s1", "s2", "s3"];
+  straight.forEach((id, i) => addNode(graph, id, offset(...CENTER, 0, 100 * (i + 1))));
+  const chain = ["A", ...straight, "B"];
+  for (let i = 1; i < chain.length; i++) connect(graph, chain[i - 1], chain[i], 110, "residential");
+  // zigzag E,N,E,S,…: 8 edges with 7 right-angle turns, length 50 each = 400
+  const zig = [
+    [0, 100], [100, 100], [100, 200], [0, 200], [0, 300], [100, 300], [100, 400],
+  ].map(([n, e], i) => {
+    const id = `z${i}`;
+    addNode(graph, id, offset(...CENTER, n, e));
+    return id;
+  });
+  const zchain = ["A", ...zig, "B"];
+  for (let i = 1; i < zchain.length; i++) connect(graph, zchain[i - 1], zchain[i], 50, "residential");
+  return graph;
+}
+
+test("turn penalties prefer the straight chain over a shorter zigzag", () => {
+  const path = shortestPath(zigzagGraph(), "A", "B");
+  assert.deepEqual(path, ["A", "s1", "s2", "s3", "B"]);
 });
 
 test("empty graph raises", () => {

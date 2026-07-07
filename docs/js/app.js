@@ -270,7 +270,7 @@ $("form").addEventListener("submit", async (event) => {
 
 function estimateSeconds(start, graphDistanceM, distanceKm) {
   const download = isGraphCached(start.lat, start.lng, graphDistanceM) ? 1 : 15;
-  const searchTime = 1 + distanceKm * 0.2; // route search grows with area
+  const searchTime = 1 + distanceKm * 0.4; // turn-aware route search grows with area
   return download + searchTime;
 }
 
@@ -317,6 +317,7 @@ function showResult(start, route) {
   $("stat-dist").textContent = (route.lengthM / 1000).toFixed(2) + " km";
   $("stat-green").textContent = Math.round(route.greenFraction * 100) + "%";
   $("stat-type").textContent = route.routeType.replaceAll("_", "-");
+  $("stat-turns").textContent = route.sharpTurns;
   $("gmaps").href = googleMapsUrl(route.coords);
   $("warnings").innerHTML = route.warnings.map((w) => `<li>${w}</li>`).join("");
   if (routeLayer) routeLayer.remove();
