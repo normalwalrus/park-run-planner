@@ -1,0 +1,33 @@
+[project]
+name = "api-app"
+version = "0.1.0"
+description = "Plan running routes that prioritize park connectors and parks over roadside running"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.139.0",
+    "httpx>=0.28.1",
+    "osmnx>=2.1.0",
+    "uvicorn[standard]>=0.50.2",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: hits real external services (OSM, Nominatim); run with -m integration",
+]
