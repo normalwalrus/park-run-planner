@@ -17,6 +17,7 @@ BEARING_STEP_DEG = 30
 LENGTH_TOLERANCE = 0.10
 RELAXED_TOLERANCE = 0.20
 REUSE_PENALTY = 3.0
+AVOID_PENALTY = 2.5  # edges of already-shown routes, for "alternate route" requests
 MAX_ROUNDS = 3
 MIN_LEG_M = 250.0
 METERS_PER_DEG_LAT = 111_320.0
@@ -29,6 +30,7 @@ class RouteResult:
     green_fraction: float
     route_type: str  # "loop" | "out_and_back"
     warnings: list[str] = field(default_factory=list)
+    pairs: set[frozenset] = field(default_factory=set)  # edges used, for avoid on re-plan
 
 
 class NoRouteError(Exception):
@@ -71,11 +73,14 @@ def _path_stats(graph: nx.MultiDiGraph, path: list) -> tuple[float, float]:
     return length, green
 
 
-def _weight_fn(used: set[frozenset]):
+def _weight_fn(used: set[frozenset], avoid: set[frozenset] | None = None):
     def weight(u, v, edges: dict) -> float:
         w = min(d.get("w", d.get("length", 1.0)) for d in edges.values())
-        if frozenset((u, v)) in used:
+        pair = frozenset((u, v))
+        if pair in used:
             w *= REUSE_PENALTY
+        if avoid and pair in avoid:
+            w *= AVOID_PENALTY
         return w
 
     return weight
@@ -97,13 +102,13 @@ def _via_pairs(graph, start, leg_m, ids, lats, lngs, tried: set[tuple]):
         yield a, b
 
 
-def _evaluate_loop(graph, start, a, b, target_m) -> tuple | None:
+def _evaluate_loop(graph, start, a, b, target_m, avoid) -> tuple | None:
     try:
-        leg1 = nx.shortest_path(graph, start, a, weight=_weight_fn(set()))
+        leg1 = nx.shortest_path(graph, start, a, weight=_weight_fn(set(), avoid))
         used = _edge_pairs(leg1)
-        leg2 = nx.shortest_path(graph, a, b, weight=_weight_fn(used))
+        leg2 = nx.shortest_path(graph, a, b, weight=_weight_fn(used, avoid))
         used |= _edge_pairs(leg2)
-        leg3 = nx.shortest_path(graph, b, start, weight=_weight_fn(used))
+        leg3 = nx.shortest_path(graph, b, start, weight=_weight_fn(used, avoid))
     except nx.NetworkXNoPath:
         return None
     path = leg1 + leg2[1:] + leg3[1:]
@@ -115,7 +120,7 @@ def _evaluate_loop(graph, start, a, b, target_m) -> tuple | None:
     return (green_fraction - 2 * deviation, deviation, path, length, green_fraction)
 
 
-def _find_loop(graph, start, target_m, ids, lats, lngs) -> RouteResult | None:
+def _find_loop(graph, start, target_m, ids, lats, lngs, avoid) -> RouteResult | None:
     # Green-weighted shortest paths meander well past crow-flies distance, so
     # the right via-point spacing is unknown up front: start at target/3 and,
     # while the resulting loops miss the target, rescale the legs by the
@@ -126,7 +131,7 @@ def _find_loop(graph, start, target_m, ids, lats, lngs) -> RouteResult | None:
     for _ in range(MAX_ROUNDS):
         round_lengths = []
         for a, b in _via_pairs(graph, start, leg, ids, lats, lngs, tried):
-            candidate = _evaluate_loop(graph, start, a, b, target_m)
+            candidate = _evaluate_loop(graph, start, a, b, target_m, avoid)
             if candidate is None:
                 continue
             candidates.append(candidate)
@@ -147,12 +152,14 @@ def _find_loop(graph, start, target_m, ids, lats, lngs) -> RouteResult | None:
                     f"closest loop found is {length / 1000:.1f} km "
                     f"({deviation:.0%} off the requested distance)"
                 )
-            return RouteResult(coords, length, green_fraction, "loop", warnings)
+            return RouteResult(coords, length, green_fraction, "loop", warnings, _edge_pairs(path))
     return None
 
 
-def _find_out_and_back(graph: nx.MultiDiGraph, start, target_m: float) -> RouteResult:
-    dist_w, paths = nx.single_source_dijkstra(graph, start, weight=_weight_fn(set()))
+def _find_out_and_back(
+    graph: nx.MultiDiGraph, start, target_m: float, avoid: set[frozenset] | None = None
+) -> RouteResult:
+    dist_w, paths = nx.single_source_dijkstra(graph, start, weight=_weight_fn(set(), avoid))
     # Accumulate true length and green length along the shortest-path tree,
     # visiting nodes in increasing weighted distance so parents come first.
     length_to = {start: 0.0}
@@ -189,16 +196,27 @@ def _find_out_and_back(graph: nx.MultiDiGraph, start, target_m: float) -> RouteR
         green_fraction,
         "out_and_back",
         ["no loop matched the requested distance; returning an out-and-back route"],
+        _edge_pairs(path),
     )
 
 
-def plan_route(graph: nx.MultiDiGraph, lat: float, lng: float, target_m: float) -> RouteResult:
-    """Best-effort loop of ~target_m meters starting and ending near (lat, lng)."""
+def plan_route(
+    graph: nx.MultiDiGraph,
+    lat: float,
+    lng: float,
+    target_m: float,
+    avoid: set[frozenset] | None = None,
+) -> RouteResult:
+    """Best-effort loop of ~target_m meters starting and ending near (lat, lng).
+
+    avoid: edge pairs of previously returned routes (RouteResult.pairs) to steer
+    away from, so a re-plan yields a genuinely different "alternate route".
+    """
     if graph.number_of_nodes() < 2:
         raise NoRouteError("no walkable paths found around the start point")
     ids, lats, lngs = _node_arrays(graph)
     start = _nearest_node(ids, lats, lngs, lat, lng)
-    loop = _find_loop(graph, start, target_m, ids, lats, lngs)
+    loop = _find_loop(graph, start, target_m, ids, lats, lngs, avoid)
     if loop is not None:
         return loop
-    return _find_out_and_back(graph, start, target_m)
+    return _find_out_and_back(graph, start, target_m, avoid)

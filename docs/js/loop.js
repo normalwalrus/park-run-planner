@@ -8,6 +8,7 @@ export const LENGTH_TOLERANCE = 0.1;
 export const RELAXED_TOLERANCE = 0.2;
 const BEARING_STEP_DEG = 30;
 const REUSE_PENALTY = 3.0;
+const AVOID_PENALTY = 2.5; // edges of already-shown routes, for "Alternate route"
 const MAX_ROUNDS = 3;
 const MIN_LEG_M = 250;
 
@@ -55,7 +56,7 @@ class MinHeap {
 
 const pairKey = (u, v) => (u < v ? `${u}|${v}` : `${v}|${u}`);
 
-function dijkstra(graph, source, used = null, target = null) {
+function dijkstra(graph, source, used = null, target = null, avoid = null) {
   const dist = new Map([[source, 0]]);
   const prev = new Map();
   const done = new Set();
@@ -68,7 +69,9 @@ function dijkstra(graph, source, used = null, target = null) {
     if (u === target) break;
     for (const edge of graph.adj.get(u) ?? []) {
       let w = edge.w;
-      if (used && used.has(pairKey(u, edge.to))) w *= REUSE_PENALTY;
+      const key = pairKey(u, edge.to);
+      if (used && used.has(key)) w *= REUSE_PENALTY;
+      if (avoid && avoid.has(key)) w *= AVOID_PENALTY;
       const nd = d + w;
       if (nd < (dist.get(edge.to) ?? Infinity)) {
         dist.set(edge.to, nd);
@@ -80,8 +83,8 @@ function dijkstra(graph, source, used = null, target = null) {
   return { dist, prev, done };
 }
 
-function shortestPath(graph, a, b, used) {
-  const { prev, done } = dijkstra(graph, a, used, b);
+function shortestPath(graph, a, b, used, avoid) {
+  const { prev, done } = dijkstra(graph, a, used, b, avoid);
   if (!done.has(b)) return null;
   const path = [b];
   while (path[path.length - 1] !== a) path.push(prev.get(path[path.length - 1]));
@@ -139,14 +142,14 @@ function* viaPairs(graph, start, legM, tried) {
   }
 }
 
-function evaluateLoop(graph, start, a, b, targetM) {
-  const leg1 = shortestPath(graph, start, a, null);
+function evaluateLoop(graph, start, a, b, targetM, avoid) {
+  const leg1 = shortestPath(graph, start, a, null, avoid);
   if (!leg1) return null;
   const used = edgePairs(leg1);
-  const leg2 = shortestPath(graph, a, b, used);
+  const leg2 = shortestPath(graph, a, b, used, avoid);
   if (!leg2) return null;
   for (const p of edgePairs(leg2)) used.add(p);
-  const leg3 = shortestPath(graph, b, start, used);
+  const leg3 = shortestPath(graph, b, start, used, avoid);
   if (!leg3) return null;
   const path = [...leg1, ...leg2.slice(1), ...leg3.slice(1)];
   const { length, green } = pathStats(graph, path);
@@ -156,7 +159,7 @@ function evaluateLoop(graph, start, a, b, targetM) {
   return { score: greenFraction - 2 * deviation, deviation, path, length, greenFraction };
 }
 
-function findLoop(graph, start, targetM) {
+function findLoop(graph, start, targetM, avoid) {
   // Green-weighted shortest paths meander well past crow-flies distance, so
   // the right via-point spacing is unknown up front: start at target/3 and,
   // while the resulting loops miss the target, rescale the legs by the
@@ -167,7 +170,7 @@ function findLoop(graph, start, targetM) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const roundLengths = [];
     for (const [a, b] of viaPairs(graph, start, leg, tried)) {
-      const candidate = evaluateLoop(graph, start, a, b, targetM);
+      const candidate = evaluateLoop(graph, start, a, b, targetM, avoid);
       if (!candidate) continue;
       candidates.push(candidate);
       roundLengths.push(candidate.length);
@@ -194,8 +197,8 @@ function findLoop(graph, start, targetM) {
   return null;
 }
 
-function findOutAndBack(graph, start, targetM) {
-  const { dist, prev } = dijkstra(graph, start);
+function findOutAndBack(graph, start, targetM, avoid) {
+  const { dist, prev } = dijkstra(graph, start, null, null, avoid);
   // Accumulate true length and green length along the shortest-path tree,
   // visiting nodes in increasing weighted distance so parents come first.
   const order = [...dist.keys()].sort((a, b) => dist.get(a) - dist.get(b));
@@ -235,13 +238,15 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     const p = graph.nodes.get(n);
     return [p.lat, p.lng];
   });
-  return { coords, lengthM, greenFraction, routeType, warnings };
+  return { coords, lengthM, greenFraction, routeType, warnings, pairs: [...edgePairs(path)] };
 }
 
-export function planRoute(graph, lat, lng, targetM) {
+// avoid: Set of edge pair-keys (from previous results' `pairs`) to steer away
+// from, so "Alternate route" produces a genuinely different loop.
+export function planRoute(graph, lat, lng, targetM, avoid = null) {
   if (graph.nodes.size < 2) {
     throw new NoRouteError("no walkable paths found around the start point");
   }
   const start = nearestNode(graph, lat, lng);
-  return findLoop(graph, start, targetM) ?? findOutAndBack(graph, start, targetM);
+  return findLoop(graph, start, targetM, avoid) ?? findOutAndBack(graph, start, targetM, avoid);
 }

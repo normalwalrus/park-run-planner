@@ -48,9 +48,19 @@
                padding: 0.6rem 1rem; }
   .stats b { display: block; font-size: 1.25rem; color: var(--green-dark); }
   .stats span { font-size: 0.75rem; color: #5b6b5b; }
-  a.gmaps { display: inline-block; margin-bottom: 0.8rem; padding: 0.6rem 1rem;
+  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+             margin-bottom: 0.8rem; }
+  a.gmaps { display: inline-block; padding: 0.6rem 1rem;
             background: var(--green); color: #fff; border-radius: 6px; text-decoration: none;
             font-weight: 600; }
+  #alt { padding: 0.6rem 1rem; background: #fff; color: var(--green-dark);
+         border: 2px solid var(--green); border-radius: 6px; font-weight: 600; }
+  #alt:hover:not(:disabled) { background: #e8f2e8; }
+  #clear { position: absolute; right: 0.25rem; top: 1.15rem; transform: translateY(-50%);
+           background: none; border: 0; padding: 0.15rem 0.45rem; font-size: 0.95rem;
+           color: #5b6b5b; cursor: pointer; border-radius: 4px; }
+  #clear:hover { color: #1a271a; background: #e4ede4; }
+  .suggest input { padding-right: 2.1rem; }
   #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
   .suggest { position: relative; display: block; }
   #suggestions { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 1100;
@@ -75,6 +85,7 @@
       <span class="suggest">
         <input id="address" placeholder="e.g. Bishan Park or 560406" autocomplete="off"
                role="combobox" aria-expanded="false" aria-controls="suggestions">
+        <button type="button" id="clear" aria-label="Clear search" hidden>✕</button>
         <ul id="suggestions" role="listbox"></ul>
       </span>
     </label>
@@ -97,7 +108,10 @@
       <div><b id="stat-green">–</b><span>on parks &amp; connectors</span></div>
       <div><b id="stat-type">–</b><span>route shape</span></div>
     </div>
-    <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+    <div class="actions">
+      <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+      <button type="button" id="alt">🔀 Alternate route</button>
+    </div>
     <ul class="warnings" id="warnings"></ul>
   </section>
   <div id="map"></div>

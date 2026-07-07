@@ -26,6 +26,7 @@ const SPOTS = [
 
 let coords = null;
 let routeLayer = null;
+let lastRun = null; // {start, distanceKm, avoid: Set, pairs} of the shown route
 const $ = (id) => document.getElementById(id);
 
 // Map is shown from the start, locked to Singapore.
@@ -118,8 +119,22 @@ let searchSeq = 0;
 const input = $("address");
 const listEl = $("suggestions");
 
+function updateClearButton() {
+  $("clear").hidden = input.value.length === 0;
+}
+
+$("clear").addEventListener("click", () => {
+  input.value = "";
+  coords = null;
+  closeSuggestions();
+  updateClearButton();
+  card.hidden = true;
+  input.focus();
+});
+
 input.addEventListener("input", () => {
   coords = null;
+  updateClearButton();
   clearTimeout(debounceTimer);
   const query = input.value.trim();
   if (query.length < MIN_QUERY_CHARS) return closeSuggestions();
@@ -168,6 +183,7 @@ function pickSuggestion(index) {
   if (!s) return;
   coords = { lat: s.lat, lng: s.lng };
   input.value = s.name;
+  updateClearButton();
   closeSuggestions();
   showStatus(`Start point set: ${s.name}. Press “Plan my run” to plan your route.`);
 }
@@ -208,6 +224,7 @@ $("locate").addEventListener("click", () => {
       if (!inSingapore(here.lat, here.lng)) return showStatus(OUTSIDE_SG, "error");
       coords = here;
       input.value = "";
+      updateClearButton();
       showStatus(
         `Start point set: your location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}). ` +
           "Press “Plan my run” to plan your route."
@@ -248,17 +265,19 @@ function estimateSeconds(start, distanceKm) {
   return download + searchTime;
 }
 
-async function plan(start, distanceKm) {
+async function plan(start, distanceKm, avoid = new Set(), alternate = false) {
   startProgress("Downloading map data for this area…", estimateSeconds(start, distanceKm));
   try {
     const graph = await loadGraph(start.lat, start.lng, distanceKm * 1000);
-    setStage("Searching for the greenest loop…");
+    setStage(alternate ? "Searching for an alternate loop…" : "Searching for the greenest loop…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
-    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000);
+    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, avoid);
+    lastRun = { start, distanceKm, avoid, pairs: route.pairs };
     showResult(start, route);
     endProgress(
       "done",
-      `Route ready: ${(route.lengthM / 1000).toFixed(2)} km, ` +
+      `${alternate ? "Alternate route" : "Route"} ready: ` +
+        `${(route.lengthM / 1000).toFixed(2)} km, ` +
         `${Math.round(route.greenFraction * 100)}% on parks & connectors.`
     );
   } catch (error) {
@@ -266,6 +285,18 @@ async function plan(start, distanceKm) {
     $("result").style.display = "none";
   }
 }
+
+// Re-plan with the same start and distance, steering away from routes already shown.
+$("alt").addEventListener("click", async () => {
+  if (!lastRun) return;
+  for (const pair of lastRun.pairs) lastRun.avoid.add(pair);
+  $("plan").disabled = $("alt").disabled = true;
+  try {
+    await plan(lastRun.start, lastRun.distanceKm, lastRun.avoid, true);
+  } finally {
+    $("plan").disabled = $("alt").disabled = false;
+  }
+});
 
 function showResult(start, route) {
   $("result").style.display = "block";

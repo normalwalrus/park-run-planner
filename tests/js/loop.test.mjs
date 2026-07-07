@@ -80,3 +80,29 @@ test("out-and-back fallback on a line", () => {
 test("empty graph raises", () => {
   assert.throws(() => planRoute(makeGraph(), ...CENTER, 3000), NoRouteError);
 });
+
+// A street grid: many distinct loops of the same length exist.
+function gridGraph(spacingM = 150, n = 5) {
+  const graph = makeGraph();
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      addNode(graph, `${i},${j}`, offset(...CENTER, spacingM * j, spacingM * i));
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i + 1 < n) connect(graph, `${i},${j}`, `${i + 1},${j}`, spacingM, "residential");
+      if (j + 1 < n) connect(graph, `${i},${j}`, `${i},${j + 1}`, spacingM, "residential");
+    }
+  }
+  return graph;
+}
+
+test("avoiding a route's edges yields a different alternate route", () => {
+  const graph = gridGraph();
+  const first = planRoute(graph, ...CENTER, 1800);
+  assert.ok(first.pairs.length > 0);
+  const second = planRoute(graph, ...CENTER, 1800, new Set(first.pairs));
+  assert.notEqual(JSON.stringify(first.coords), JSON.stringify(second.coords));
+  assert.deepEqual(second.coords[0], second.coords[second.coords.length - 1]);
+});

@@ -96,3 +96,28 @@ def test_empty_graph_raises():
     graph = nx.MultiDiGraph()
     with pytest.raises(loop.NoRouteError):
         loop.plan_route(graph, *CENTER, 3000.0)
+
+
+def grid_graph(spacing_m: float = 150, n: int = 5) -> nx.MultiDiGraph:
+    """A street grid: many distinct loops of the same length exist."""
+    graph = nx.MultiDiGraph()
+    for i in range(n):
+        for j in range(n):
+            _add_node(graph, (i, j), *_offset(*CENTER, spacing_m * j, spacing_m * i))
+    for i in range(n):
+        for j in range(n):
+            if i + 1 < n:
+                _connect(graph, (i, j), (i + 1, j), spacing_m, "residential")
+            if j + 1 < n:
+                _connect(graph, (i, j), (i, j + 1), spacing_m, "residential")
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_avoid_yields_a_different_alternate_route():
+    graph = grid_graph()
+    first = loop.plan_route(graph, *CENTER, 1800.0)
+    assert first.pairs
+    second = loop.plan_route(graph, *CENTER, 1800.0, avoid=first.pairs)
+    assert first.coords != second.coords
+    assert second.coords[0] == second.coords[-1]
