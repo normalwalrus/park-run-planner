@@ -28,7 +28,7 @@ class PlanResponse(BaseModel):
     requested_distance_m: float
     green_fraction: float
     route_type: str
-    sharp_turns: int
+    roads_crossed: int
     start: tuple[float, float]
     path: list[tuple[float, float]]
     warnings: list[str] = []

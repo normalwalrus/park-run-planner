@@ -2,7 +2,7 @@
 // and build the scored routing graph — mirrors app/routing/graph.py.
 
 import { haversineM, pointInRing } from "./geo.js";
-import { edgeFactor, GREEN_FACTOR } from "./scoring.js";
+import { edgeFactor, roadLevel, GREEN_FACTOR } from "./scoring.js";
 
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -117,7 +117,13 @@ export function buildGraph(elements) {
         pointInRing(lat, lng, p.ring)
     );
     const factor = edgeFactor({ highway: edge.highway, name: edge.name, inPark });
-    const scored = { length: edge.length, w: edge.length * factor, green: factor === GREEN_FACTOR };
+    const road = roadLevel(edge.highway);
+    const scored = {
+      length: edge.length,
+      w: edge.length * factor,
+      green: factor === GREEN_FACTOR,
+      road,
+    };
     if (!adj.has(edge.u)) adj.set(edge.u, []);
     if (!adj.has(edge.v)) adj.set(edge.v, []);
     adj.get(edge.u).push({ to: edge.v, ...scored });

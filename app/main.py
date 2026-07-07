@@ -63,7 +63,7 @@ def plan(request: PlanRequest) -> PlanResponse:
         requested_distance_m=target_m,
         green_fraction=round(route.green_fraction, 3),
         route_type=route.route_type,
-        sharp_turns=route.sharp_turns,
+        roads_crossed=route.roads_crossed,
         start=(lat, lng),
         path=route.coords,
         warnings=warnings,

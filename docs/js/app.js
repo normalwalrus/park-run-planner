@@ -317,7 +317,7 @@ function showResult(start, route) {
   $("stat-dist").textContent = (route.lengthM / 1000).toFixed(2) + " km";
   $("stat-green").textContent = Math.round(route.greenFraction * 100) + "%";
   $("stat-type").textContent = route.routeType.replaceAll("_", "-");
-  $("stat-turns").textContent = route.sharpTurns;
+  $("stat-crossings").textContent = route.roadsCrossed;
   $("gmaps").href = googleMapsUrl(route.coords);
   $("warnings").innerHTML = route.warnings.map((w) => `<li>${w}</li>`).join("");
   if (routeLayer) routeLayer.remove();

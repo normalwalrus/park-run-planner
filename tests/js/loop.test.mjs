@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { planRoute, shortestPath, NoRouteError, RELAXED_TOLERANCE } from "../../docs/js/loop.js";
-import { edgeFactor, GREEN_FACTOR } from "../../docs/js/scoring.js";
+import { edgeFactor, roadLevel, GREEN_FACTOR } from "../../docs/js/scoring.js";
 
 const CENTER = [1.0, 103.0];
 const M_PER_DEG = 111320;
@@ -25,7 +25,12 @@ function addNode(graph, id, [lat, lng]) {
 
 function connect(graph, u, v, length, highway) {
   const factor = edgeFactor({ highway });
-  const edge = { length, w: length * factor, green: factor === GREEN_FACTOR };
+  const edge = {
+    length,
+    w: length * factor,
+    green: factor === GREEN_FACTOR,
+    road: roadLevel(highway),
+  };
   graph.adj.get(u).push({ to: v, ...edge });
   graph.adj.get(v).push({ to: u, ...edge });
 }
@@ -75,7 +80,51 @@ test("out-and-back fallback on a line", () => {
   assert.ok(Math.abs(route.lengthM - 3000) < 1e-6);
   assert.deepEqual(route.coords[0], route.coords[route.coords.length - 1]);
   assert.ok(route.warnings.length > 0);
-  assert.equal(route.sharpTurns, 1); // only the turnaround
+  assert.equal(route.roadsCrossed, 0); // running along a street is not a crossing
+});
+
+// A footway that cuts across a residential road at X, and a slightly longer
+// footway detour via Y that avoids the crossing entirely.
+function crossingGraph() {
+  const graph = makeGraph();
+  addNode(graph, "A", CENTER);
+  addNode(graph, "X", offset(...CENTER, 0, 100));
+  addNode(graph, "B", offset(...CENTER, 0, 200));
+  addNode(graph, "Y", offset(...CENTER, 30, 100)); // shallow detour, no sharp turns
+  addNode(graph, "R1", offset(...CENTER, 50, 100));
+  addNode(graph, "R2", offset(...CENTER, -50, 100));
+  connect(graph, "A", "X", 100, "footway");
+  connect(graph, "X", "B", 100, "footway");
+  connect(graph, "A", "Y", 110, "footway");
+  connect(graph, "Y", "B", 110, "footway");
+  connect(graph, "R1", "X", 50, "residential"); // the road runs through X
+  connect(graph, "X", "R2", 50, "residential");
+  return graph;
+}
+
+test("crossing penalty prefers a detour over cutting across a road", () => {
+  // direct: 200m footway (w=80) + minor crossing (20) = 100; detour: 220m (w=88)
+  const path = shortestPath(crossingGraph(), "A", "B");
+  assert.deepEqual(path, ["A", "Y", "B"]);
+});
+
+test("roads crossed are counted, deduped within a dual carriageway", () => {
+  const graph = makeGraph();
+  const chain = [
+    ["A", 0], ["X1", 100], ["X2", 120], ["X3", 220], ["B", 320],
+  ];
+  for (const [id, east] of chain) addNode(graph, id, offset(...CENTER, 0, east));
+  connect(graph, "A", "X1", 100, "footway");
+  connect(graph, "X1", "X2", 20, "footway");
+  connect(graph, "X2", "X3", 100, "footway");
+  connect(graph, "X3", "B", 100, "footway");
+  // road stubs mark X1/X2 (a dual carriageway pair) and X3 (a separate road)
+  for (const [i, x] of ["X1", "X2", "X3"].entries()) {
+    addNode(graph, `s${i}`, offset(...CENTER, 30, 100 + i * 10));
+    connect(graph, x, `s${i}`, 30, "residential");
+  }
+  const route = planRoute(graph, ...CENTER, 320, null, "straight");
+  assert.equal(route.roadsCrossed, 2); // X1+X2 merge into one, X3 is the second
 });
 
 // Two ways from A to B: a zigzag that is shorter on paper and a straight chain

@@ -38,6 +38,32 @@ TURN_PENALTY_LIGHT = 8.0
 TURN_PENALTY_SHARP = 25.0
 TURN_PENALTY_REVERSE = 80.0
 
+# Road-crossing penalties by severity (weighted meters; green path costs 0.4/m,
+# so 20 weighted-m ~ 50 m of green detour tolerated to avoid a minor road).
+CROSS_PENALTY = (0.0, 20.0, 40.0, 60.0)  # index = road level
+CROSS_DEDUPE_M = 30.0  # dual carriageways count once in the stat
+# `service` (driveways, car-park aisles) is deliberately excluded — cutting
+# across a driveway is not a road crossing to a runner.
+ROAD_LEVELS = {
+    "residential": 1,
+    "living_street": 1,
+    "unclassified": 1,
+    "tertiary": 2,
+    "tertiary_link": 2,
+    "secondary": 2,
+    "secondary_link": 2,
+    "primary": 3,
+    "primary_link": 3,
+    "trunk": 3,
+    "trunk_link": 3,
+}
+
+
+def _road_level(data: dict) -> int:
+    highway = data.get("highway")
+    values = highway if isinstance(highway, list) else [highway]
+    return max((ROAD_LEVELS.get(h, 0) for h in values), default=0)
+
 
 @dataclass
 class RouteResult:
@@ -47,7 +73,7 @@ class RouteResult:
     route_type: str  # "loop" | "out_and_back" | "one_way"
     warnings: list[str] = field(default_factory=list)
     pairs: set[frozenset] = field(default_factory=set)  # edges used, for avoid on re-plan
-    sharp_turns: int = 0
+    roads_crossed: int = 0
 
 
 class NoRouteError(Exception):
@@ -117,19 +143,22 @@ def _edge_pairs(path: list) -> set[frozenset]:
     return {frozenset((u, v)) for u, v in zip(path, path[1:])}
 
 
-def _prepared_adj(graph) -> dict:
-    """Per-node adjacency with best-edge weight, bearings, and pair precomputed.
+def _prepared_adj(graph) -> tuple[dict, dict]:
+    """(adjacency, node road levels) with weights, bearings, pair, and road level
+    precomputed per edge.
 
     Cached on the graph object: the hot Dijkstra loop must not touch edge dicts
     or shapely geometry per relaxation.
     """
-    adj = graph.graph.get("_turn_aware_adj")
-    if adj is None:
+    cached = graph.graph.get("_turn_aware_adj")
+    if cached is None:
         adj = {}
+        node_road: dict = {}
         for u in graph.nodes:
             entries = []
             for v in graph[u]:
                 data = _best_edge(graph, u, v)
+                road = _road_level(data)
                 entries.append(
                     (
                         v,
@@ -137,26 +166,31 @@ def _prepared_adj(graph) -> dict:
                         _edge_bearing(graph, u, v, at_end=False),  # exit bearing at u
                         _edge_bearing(graph, u, v, at_end=True),  # entry bearing at v
                         frozenset((u, v)),
+                        road,
                     )
                 )
+                if road:
+                    node_road[u] = max(node_road.get(u, 0), road)
+                    node_road[v] = max(node_road.get(v, 0), road)
             adj[u] = entries
-        graph.graph["_turn_aware_adj"] = adj
-    return adj
+        cached = (adj, node_road)
+        graph.graph["_turn_aware_adj"] = cached
+    return cached
 
 
 def _dijkstra(graph, source, used=None, target=None, avoid=None):
     """Turn-aware Dijkstra over (arrived-from, node) states."""
-    adj = _prepared_adj(graph)
+    adj, node_road = _prepared_adj(graph)
     start_state = (None, source)
     dist = {start_state: 0.0}
     prev_state: dict = {}
     settled: set = set()
     tiebreak = count()
-    # heap items carry the entry bearing of the arrival edge to avoid lookups
-    heap = [(0.0, next(tiebreak), start_state, None)]
+    # heap items carry the arrival edge's entry bearing and whether it is a road
+    heap = [(0.0, next(tiebreak), start_state, None, False)]
     target_state = None
     while heap:
-        d, _, state, bearing_in = heapq.heappop(heap)
+        d, _, state, bearing_in, arrived_by_road = heapq.heappop(heap)
         if state in settled:
             continue
         settled.add(state)
@@ -164,7 +198,10 @@ def _dijkstra(graph, source, used=None, target=None, avoid=None):
         if u == target:
             target_state = state
             break
-        for v, w, exit_bearing, entry_bearing, pair in adj[u]:
+        # Crossing a road at u: we pass through a road-carrying node while both
+        # arriving and leaving on non-road paths (walking along a road is free).
+        u_road = node_road.get(u, 0)
+        for v, w, exit_bearing, entry_bearing, pair, road in adj[u]:
             if v == frm:
                 continue  # no immediate U-turns
             if used and pair in used:
@@ -173,12 +210,14 @@ def _dijkstra(graph, source, used=None, target=None, avoid=None):
                 w = w * AVOID_PENALTY
             if bearing_in is not None:
                 w = w + _turn_penalty(_turn_angle_deg(bearing_in, exit_bearing))
+            if frm is not None and not arrived_by_road and not road and u_road:
+                w = w + CROSS_PENALTY[u_road]
             nd = d + w
             next_state = (u, v)
             if nd < dist.get(next_state, math.inf):
                 dist[next_state] = nd
                 prev_state[next_state] = state
-                heapq.heappush(heap, (nd, next(tiebreak), next_state, entry_bearing))
+                heapq.heappush(heap, (nd, next(tiebreak), next_state, entry_bearing, road > 0))
     return dist, prev_state, settled, target_state
 
 
@@ -207,15 +246,23 @@ def _path_stats(graph: nx.MultiDiGraph, path: list) -> tuple[float, float]:
     return length, green
 
 
-def _count_sharp_turns(graph: nx.MultiDiGraph, path: list) -> int:
-    turns = 0
+def _count_road_crossings(graph: nx.MultiDiGraph, path: list) -> int:
+    """Roads crossed along the path: interior nodes carrying a road where the
+    route arrives and leaves on non-road paths. Crossings within CROSS_DEDUPE_M
+    of the previous one count once (dual carriageways read as a single road)."""
+    _, node_road = _prepared_adj(graph)
+    crossings = 0
+    walked = 0.0
+    last_at = -math.inf
     for t, u, v in zip(path, path[1:], path[2:]):
-        angle = _turn_angle_deg(
-            _edge_bearing(graph, t, u, at_end=True), _edge_bearing(graph, u, v, at_end=False)
-        )
-        if angle >= TURN_SHARP_DEG:
-            turns += 1
-    return turns
+        in_edge = _best_edge(graph, t, u)
+        walked += in_edge.get("length", 1.0)
+        out_edge = _best_edge(graph, u, v)
+        if not _road_level(in_edge) and not _road_level(out_edge) and node_road.get(u, 0) > 0:
+            if walked - last_at > CROSS_DEDUPE_M:
+                crossings += 1
+            last_at = walked
+    return crossings
 
 
 def _via_pairs(graph, start, leg_m, ids, lats, lngs, tried: set[tuple]):
@@ -260,7 +307,7 @@ def _to_result(graph, path, length, green_fraction, route_type, warnings) -> Rou
         route_type,
         warnings,
         _edge_pairs(path),
-        _count_sharp_turns(graph, path),
+        _count_road_crossings(graph, path),
     )
 
 

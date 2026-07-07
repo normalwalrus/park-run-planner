@@ -90,7 +90,50 @@ def test_out_and_back_fallback_on_line():
     assert route.length_m == pytest.approx(3000.0)
     assert route.coords[0] == route.coords[-1]
     assert route.warnings
-    assert route.sharp_turns == 1  # only the turnaround
+    assert route.roads_crossed == 0  # running along a street is not a crossing
+
+
+def crossing_graph() -> nx.MultiDiGraph:
+    """A footway cutting across a residential road at X, and a slightly longer
+    footway detour via Y that avoids the crossing entirely."""
+    graph = nx.MultiDiGraph()
+    _add_node(graph, "A", *CENTER)
+    _add_node(graph, "X", *_offset(*CENTER, 0, 100))
+    _add_node(graph, "B", *_offset(*CENTER, 0, 200))
+    _add_node(graph, "Y", *_offset(*CENTER, 30, 100))  # shallow detour, no sharp turns
+    _add_node(graph, "R1", *_offset(*CENTER, 50, 100))
+    _add_node(graph, "R2", *_offset(*CENTER, -50, 100))
+    _connect(graph, "A", "X", 100, "footway")
+    _connect(graph, "X", "B", 100, "footway")
+    _connect(graph, "A", "Y", 110, "footway")
+    _connect(graph, "Y", "B", 110, "footway")
+    _connect(graph, "R1", "X", 50, "residential")  # the road runs through X
+    _connect(graph, "X", "R2", 50, "residential")
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_crossing_penalty_prefers_detour_over_cutting_across_road():
+    # direct: 200m footway (w=80) + minor crossing (20) = 100; detour: 220m (w=88)
+    path = loop._shortest_path(crossing_graph(), "A", "B")
+    assert path == ["A", "Y", "B"]
+
+
+def test_roads_crossed_counted_and_deduped():
+    graph = nx.MultiDiGraph()
+    for node, east in [("A", 0), ("X1", 100), ("X2", 120), ("X3", 220), ("B", 320)]:
+        _add_node(graph, node, *_offset(*CENTER, 0, east))
+    _connect(graph, "A", "X1", 100, "footway")
+    _connect(graph, "X1", "X2", 20, "footway")
+    _connect(graph, "X2", "X3", 100, "footway")
+    _connect(graph, "X3", "B", 100, "footway")
+    # road stubs mark X1/X2 (a dual carriageway pair) and X3 (a separate road)
+    for i, x in enumerate(["X1", "X2", "X3"]):
+        _add_node(graph, f"s{i}", *_offset(*CENTER, 30, 100 + i * 10))
+        _connect(graph, x, f"s{i}", 30, "residential")
+    scoring.score_graph(graph)
+    route = loop.plan_route(graph, *CENTER, 320.0, shape="straight")
+    assert route.roads_crossed == 2  # X1+X2 merge into one, X3 is the second
 
 
 def zigzag_graph() -> nx.MultiDiGraph:

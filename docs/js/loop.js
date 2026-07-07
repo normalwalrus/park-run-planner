@@ -25,6 +25,11 @@ export const TURN_PENALTY_LIGHT = 8;
 export const TURN_PENALTY_SHARP = 25;
 export const TURN_PENALTY_REVERSE = 80;
 
+// Road-crossing penalties by severity (weighted meters; green path costs 0.4/m,
+// so 20 weighted-m ~ 50 m of green detour tolerated to avoid a minor road).
+export const CROSS_PENALTY = [0, 20, 40, 60]; // index = road level
+const CROSS_DEDUPE_M = 30; // dual carriageways count once in the stat
+
 export class NoRouteError extends Error {}
 
 class MinHeap {
@@ -96,9 +101,16 @@ function preparedAdj(graph, u) {
     if (edge.bearing === undefined) {
       edge.bearing = bearingDeg(graph, u, edge.to);
       edge.pair = pairKey(u, edge.to);
+      edge.road ??= 0;
     }
   }
   return entries;
+}
+
+function nodeRoadLevel(graph, u) {
+  let level = 0;
+  for (const edge of preparedAdj(graph, u)) if (edge.road > level) level = edge.road;
+  return level;
 }
 
 // Turn-aware Dijkstra over (arrived-from, node) states. State keys are
@@ -111,16 +123,19 @@ function dijkstra(graph, source, used = null, target = null, avoid = null) {
   const stateNode = new Map([[startKey, source]]);
   const settled = new Set();
   const heap = new MinHeap();
-  heap.push(0, [source, null, startKey, null]);
+  heap.push(0, [source, null, startKey, null, false]);
   let targetKey = null;
   while (heap.size) {
-    const [d, [u, from, key, bearingIn]] = heap.pop();
+    const [d, [u, from, key, bearingIn, arrivedByRoad]] = heap.pop();
     if (settled.has(key)) continue;
     settled.add(key);
     if (u === target) {
       targetKey = key;
       break;
     }
+    // Crossing a road at u: we pass through a road-carrying node while both
+    // arriving and leaving on non-road paths (walking along a road is free).
+    const uRoad = nodeRoadLevel(graph, u);
     for (const edge of preparedAdj(graph, u)) {
       if (edge.to === from) continue; // no immediate U-turns
       let w = edge.w;
@@ -129,13 +144,16 @@ function dijkstra(graph, source, used = null, target = null, avoid = null) {
       if (bearingIn !== null) {
         w += turnPenalty(turnAngleDeg(bearingIn, edge.bearing));
       }
+      if (from !== null && !arrivedByRoad && !edge.road && uRoad > 0) {
+        w += CROSS_PENALTY[uRoad];
+      }
       const nd = d + w;
       const stateKey = `${u}|${edge.to}`;
       if (nd < (dist.get(stateKey) ?? Infinity)) {
         dist.set(stateKey, nd);
         prevState.set(stateKey, key);
         stateNode.set(stateKey, edge.to);
-        heap.push(nd, [edge.to, u, stateKey, edge.bearing]);
+        heap.push(nd, [edge.to, u, stateKey, edge.bearing, edge.road > 0]);
       }
     }
   }
@@ -172,14 +190,21 @@ function pathStats(graph, path) {
   return { length, green };
 }
 
-function countSharpTurns(graph, path) {
+// Roads crossed along the path: interior nodes carrying a road where the route
+// arrives and leaves on non-road paths. Crossings within CROSS_DEDUPE_M of the
+// previous one count once (dual carriageways read as a single road to a human).
+function countRoadCrossings(graph, path) {
   let count = 0;
-  for (let i = 2; i < path.length; i++) {
-    const angle = turnAngleDeg(
-      bearingDeg(graph, path[i - 2], path[i - 1]),
-      bearingDeg(graph, path[i - 1], path[i])
-    );
-    if (angle >= TURN_SHARP_DEG) count++;
+  let walked = 0;
+  let lastCrossingAt = -Infinity;
+  for (let i = 1; i < path.length - 1; i++) {
+    const inEdge = bestEdge(graph, path[i - 1], path[i]);
+    walked += inEdge.length;
+    const outEdge = bestEdge(graph, path[i], path[i + 1]);
+    if (!inEdge.road && !outEdge.road && nodeRoadLevel(graph, path[i]) > 0) {
+      if (walked - lastCrossingAt > CROSS_DEDUPE_M) count++;
+      lastCrossingAt = walked;
+    }
   }
   return count;
 }
@@ -342,7 +367,7 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     routeType,
     warnings,
     pairs: [...edgePairs(path)],
-    sharpTurns: countSharpTurns(graph, path),
+    roadsCrossed: countRoadCrossings(graph, path),
   };
 }
 
