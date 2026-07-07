@@ -103,7 +103,7 @@ function crossingGraph() {
 }
 
 test("crossing penalty prefers a detour over cutting across a road", () => {
-  // direct: 200m footway (w=80) + minor crossing (20) = 100; detour: 220m (w=88)
+  // direct: 200m footway (w=80) + minor crossing (60) = 140; detour: 220m (w=88)
   const path = shortestPath(crossingGraph(), "A", "B");
   assert.deepEqual(path, ["A", "Y", "B"]);
 });

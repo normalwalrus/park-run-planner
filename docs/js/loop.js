@@ -26,8 +26,9 @@ export const TURN_PENALTY_SHARP = 25;
 export const TURN_PENALTY_REVERSE = 80;
 
 // Road-crossing penalties by severity (weighted meters; green path costs 0.4/m,
-// so 20 weighted-m ~ 50 m of green detour tolerated to avoid a minor road).
-export const CROSS_PENALTY = [0, 20, 40, 60]; // index = road level
+// so 60 weighted-m ~ 150 m of green detour tolerated to avoid a minor road,
+// and up to ~400 m to avoid crossing a primary road).
+export const CROSS_PENALTY = [0, 60, 110, 160]; // index = road level
 const CROSS_DEDUPE_M = 30; // dual carriageways count once in the stat
 
 export class NoRouteError extends Error {}

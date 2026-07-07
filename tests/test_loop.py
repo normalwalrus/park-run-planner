@@ -114,7 +114,7 @@ def crossing_graph() -> nx.MultiDiGraph:
 
 
 def test_crossing_penalty_prefers_detour_over_cutting_across_road():
-    # direct: 200m footway (w=80) + minor crossing (20) = 100; detour: 220m (w=88)
+    # direct: 200m footway (w=80) + minor crossing (60) = 140; detour: 220m (w=88)
     path = loop._shortest_path(crossing_graph(), "A", "B")
     assert path == ["A", "Y", "B"]
 
