@@ -49,7 +49,9 @@ def plan(request: PlanRequest) -> PlanResponse:
     warnings += graph_warnings
 
     try:
-        route = loop.plan_route(walk_graph, lat, lng, target_m, shape=request.route_shape)
+        route = loop.plan_route(
+            walk_graph, lat, lng, target_m, shape=request.route_shape, elev=request.elevation
+        )
     except loop.NoRouteError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings += route.warnings
@@ -61,6 +63,9 @@ def plan(request: PlanRequest) -> PlanResponse:
         green_fraction=round(route.green_fraction, 3),
         route_type=route.route_type,
         roads_crossed=route.roads_crossed,
+        elevation_gain_m=None
+        if route.elevation_gain_m is None
+        else round(route.elevation_gain_m, 1),
         start=(lat, lng),
         path=route.coords,
         warnings=warnings,

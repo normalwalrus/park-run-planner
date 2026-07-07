@@ -136,6 +136,43 @@ def test_roads_crossed_counted_and_deduped():
     assert route.roads_crossed == 2  # X1+X2 merge into one, X3 is the second
 
 
+def hill_graph() -> nx.MultiDiGraph:
+    """Two ways A->B: a short path over a hill vs a longer flat detour."""
+    graph = nx.MultiDiGraph()
+    _add_node(graph, "A", *CENTER)
+    _add_node(graph, "B", *_offset(*CENTER, 0, 300))
+    _add_node(graph, "h1", *_offset(*CENTER, 0, 150))  # on the hill
+    _add_node(graph, "f1", *_offset(*CENTER, 30, 100))  # shallow flat detour
+    _add_node(graph, "f2", *_offset(*CENTER, 30, 200))
+    _connect(graph, "A", "h1", 100, "footway")
+    _connect(graph, "h1", "B", 100, "footway")
+    _connect(graph, "A", "f1", 110, "footway")
+    _connect(graph, "f1", "f2", 110, "footway")
+    _connect(graph, "f2", "B", 110, "footway")
+    for node, elev in [("A", 0.0), ("B", 0.0), ("h1", 15.0), ("f1", 0.0), ("f2", 0.0)]:
+        graph.nodes[node]["elevation"] = elev
+    graph.graph["elevation"] = True
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_elevation_none_avoids_hill_high_seeks_it():
+    # hill: 200m green (w=80) + 15m climb; flat: 330m green (w=132)
+    flat = loop._shortest_path(hill_graph(), "A", "B", elev="none")
+    assert flat == ["A", "f1", "f2", "B"]  # 10/m * 15m climbed pushes off the hill
+    hilly = loop._shortest_path(hill_graph(), "A", "B", elev="high")
+    assert hilly == ["A", "h1", "B"]  # climbing edges discounted
+
+
+def test_elevation_gain_reported_and_none_without_data():
+    route = loop.plan_route(hill_graph(), *CENTER, 300.0, shape="straight")
+    assert route.elevation_gain_m is not None
+    no_data = hill_graph()
+    no_data.graph.pop("elevation")
+    route2 = loop.plan_route(no_data, *CENTER, 300.0, shape="straight")
+    assert route2.elevation_gain_m is None
+
+
 def zigzag_graph() -> nx.MultiDiGraph:
     """Two ways A->B: a zigzag shorter on paper, and a slightly longer straight chain."""
     graph = nx.MultiDiGraph()

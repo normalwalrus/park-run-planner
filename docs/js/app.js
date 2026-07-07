@@ -246,6 +246,10 @@ function selectedShape() {
   return document.querySelector('input[name="shape"]:checked')?.value ?? "loop";
 }
 
+function selectedElevation() {
+  return document.querySelector('input[name="elev"]:checked')?.value ?? "low";
+}
+
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   closeSuggestions();
@@ -267,6 +271,7 @@ $("form").addEventListener("submit", async (event) => {
     start: coords,
     distanceKm,
     shape: selectedShape(),
+    elev: selectedElevation(),
     avoid: new Set(),
     routes: [],
     counter: 0,
@@ -298,7 +303,9 @@ async function runPlan(alternate) {
     const graph = await loadGraph(start.lat, start.lng, graphDistanceM);
     setStage(alternate ? "Searching for an alternate route…" : "Searching for the greenest route…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
-    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, session.avoid, shape);
+    const route = planRoute(
+      graph, start.lat, start.lng, distanceKm * 1000, session.avoid, shape, session.elev
+    );
     for (const pair of route.pairs) session.avoid.add(pair); // future alternates steer away
     const entry = { id: ++session.counter, route };
     session.routes.push(entry);
@@ -363,6 +370,8 @@ function showResult(start, route) {
   $("stat-green").textContent = Math.round(route.greenFraction * 100) + "%";
   $("stat-type").textContent = route.routeType.replaceAll("_", "-");
   $("stat-crossings").textContent = route.roadsCrossed;
+  $("stat-elev").textContent =
+    route.elevationGain === null ? "–" : `${Math.round(route.elevationGain)} m`;
   $("gmaps").href = googleMapsUrl(route.coords);
   $("warnings").innerHTML = route.warnings.map((w) => `<li>${w}</li>`).join("");
   if (routeLayer) routeLayer.remove();
@@ -386,6 +395,9 @@ const params = new URLSearchParams(location.search);
 if (params.has("distance")) $("distance").value = params.get("distance");
 if (params.get("shape") === "straight") {
   document.querySelector('input[name="shape"][value="straight"]').checked = true;
+}
+if (["none", "low", "high"].includes(params.get("elevation"))) {
+  document.querySelector(`input[name="elev"][value="${params.get("elevation")}"]`).checked = true;
 }
 if (params.has("lat") && params.has("lng")) {
   coords = { lat: parseFloat(params.get("lat")), lng: parseFloat(params.get("lng")) };

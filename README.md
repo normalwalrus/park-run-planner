@@ -56,6 +56,7 @@ Request body — either coordinates or an address, plus a distance:
 | `address` | string | place name, street address, or 6-digit postal code, resolved via OneMap (used when no coords) |
 | `distance_km` | float | 1–30 |
 | `route_shape` | string | `"loop"` (default; start = end) or `"straight"` (one-way, ends away from the start) |
+| `elevation` | string | `"none"` (flattest), `"low"` (default; gentle rises ok), or `"high"` (seek climbs) |
 
 Response:
 
@@ -74,6 +75,7 @@ Response:
 
 - `green_fraction` — share of the route on park connectors, parks, or footpaths (0–1).
 - `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning); `"one_way"` for straight routes.
+- `elevation_gain_m` — total ascent in meters (`null` if elevation data was unavailable).
 - `path` — full route geometry (lat, lng), ready to draw on a map.
 - Errors: `404` address not found in Singapore, `422` invalid input / location outside Singapore / no walkable paths, `502` OSM data unavailable.
 
@@ -85,7 +87,7 @@ Liveness check, returns `{"status": "ok"}`.
 
 1. **Graph** — `osmnx` downloads the OSM walking network around the start (radius scales with distance, capped at 6 km) and marks edges inside `leisure=park`-style polygons via a spatial join.
 2. **Scoring** — each edge gets a weight `length × factor`: **0.4** for green (footway/path/cycleway/pedestrian/track tags, names matching *Park Connector*/*PCN*, or inside a park), **1.0** neutral (residential streets), **2.5** for primary/secondary/tertiary/trunk roads.
-3. **Loop search** — triangle heuristic: pick two via-points on a fan of compass bearings, connect start → A → B → start with weighted shortest paths, penalizing already-used edges ×3 so the loop doesn't retrace itself. Because green-weighted paths meander, the via-point spacing is rescaled by the measured overshoot ratio over a few rounds until a loop lands within ±10 % of target (±20 % accepted with a warning). The search is **turn- and crossing-aware**: Dijkstra runs over (arrived-from, node) states; each transition pays a penalty scaled by the turn angle (gentle bends free, sharp corners costly, reversals heavily penalized, immediate U-turns forbidden) and a penalty for cutting across a road (scaled by road size — walking along a road is free, and driveways don't count), so routes prefer straight, smooth paths with as few road crossings as possible. The response reports `roads_crossed` (dual carriageways counted once).
+3. **Loop search** — triangle heuristic: pick two via-points on a fan of compass bearings, connect start → A → B → start with weighted shortest paths, penalizing already-used edges ×3 so the loop doesn't retrace itself. Because green-weighted paths meander, the via-point spacing is rescaled by the measured overshoot ratio over a few rounds until a loop lands within ±10 % of target (±20 % accepted with a warning). The search is **turn- and crossing-aware**: Dijkstra runs over (arrived-from, node) states; each transition pays a penalty scaled by the turn angle (gentle bends free, sharp corners costly, reversals heavily penalized, immediate U-turns forbidden) and a penalty for cutting across a road (scaled by road size — walking along a road is free, and driveways don't count), so routes prefer straight, smooth paths with as few road crossings as possible. The response reports `roads_crossed` (dual carriageways counted once). **Elevation** comes from AWS Terrain Tiles (Terrarium DEM, bilinearly sampled): the `elevation` preference biases both the edge weights (climb penalties for "none"/"low", climb discounts for "high") and the candidate scoring by average grade, and routes report `elevation_gain_m` (2 m hysteresis so DEM noise doesn't count as climb).
 4. **Output** — up to 9 waypoints sampled evenly along the loop go into a `google.com/maps/dir` walking URL; Google routes between waypoints, so the waypoints pin the route onto the green paths.
 
 ## Configuration
@@ -110,4 +112,4 @@ python3 -m http.server -d docs 8200   # serve the static app locally
 
 The routing algorithm exists twice — `app/routing/` (Python, for the API) and `docs/js/` (JavaScript, for the static page). Changes to scoring or loop search should be made in both; each has a matching unit-test suite on synthetic graphs.
 
-Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (via Overpass API); search powered by [OneMap](https://www.onemap.gov.sg/) © Singapore Land Authority.
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (via Overpass API); search powered by [OneMap](https://www.onemap.gov.sg/) © Singapore Land Authority; elevation from [Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/) (Mapzen Terrarium).

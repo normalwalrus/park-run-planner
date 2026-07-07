@@ -1,6 +1,7 @@
 // Fetch the OSM walking network + park polygons around a point via Overpass,
 // and build the scored routing graph — mirrors app/routing/graph.py.
 
+import { annotateElevation } from "./elevation.js";
 import { haversineM, pointInRing } from "./geo.js";
 import { edgeFactor, roadLevel, GREEN_FACTOR } from "./scoring.js";
 
@@ -175,6 +176,7 @@ export async function loadGraph(lat, lng, distanceM) {
   if (cache.has(key)) return cache.get(key);
   const data = await fetchOverpass(lat, lng, radius);
   const graph = buildGraph(data.elements ?? []);
+  await annotateElevation(graph); // sets graph.elev; absent = preference ignored
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
   cache.set(key, graph);
   return graph;

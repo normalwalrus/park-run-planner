@@ -77,10 +77,17 @@ def test_route_shape_passed_to_planner(monkeypatch):
     monkeypatch.setattr(loop_module, "plan_route", fake_plan)
     response = client.post(
         "/api/routes/plan",
-        json={"lat": 1.3521, "lng": 103.8198, "distance_km": 5, "route_shape": "straight"},
+        json={
+            "lat": 1.3521,
+            "lng": 103.8198,
+            "distance_km": 5,
+            "route_shape": "straight",
+            "elevation": "high",
+        },
     )
     assert response.status_code == 200
     assert seen["shape"] == "straight"
+    assert seen["elev"] == "high"
 
 
 def test_invalid_route_shape_rejected():

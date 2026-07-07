@@ -11,6 +11,7 @@ class PlanRequest(BaseModel):
     address: str | None = None
     distance_km: float = Field(ge=1, le=30)
     route_shape: Literal["loop", "straight"] = "loop"
+    elevation: Literal["none", "low", "high"] = "low"
 
     @model_validator(mode="after")
     def check_location(self) -> "PlanRequest":
@@ -29,6 +30,7 @@ class PlanResponse(BaseModel):
     green_fraction: float
     route_type: str
     roads_crossed: int
+    elevation_gain_m: float | None
     start: tuple[float, float]
     path: list[tuple[float, float]]
     warnings: list[str] = []

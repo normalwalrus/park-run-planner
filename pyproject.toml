@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.139.0",
     "httpx>=0.28.1",
     "osmnx>=2.1.0",
+    "pillow>=12.3.0",
     "uvicorn[standard]>=0.50.2",
 ]
 

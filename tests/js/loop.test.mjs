@@ -127,6 +127,41 @@ test("roads crossed are counted, deduped within a dual carriageway", () => {
   assert.equal(route.roadsCrossed, 2); // X1+X2 merge into one, X3 is the second
 });
 
+// Two ways from A to B: a short path over a hill vs a longer flat detour.
+function hillGraph() {
+  const graph = makeGraph();
+  addNode(graph, "A", CENTER);
+  addNode(graph, "B", offset(...CENTER, 0, 300));
+  addNode(graph, "h1", offset(...CENTER, 0, 150)); // on the hill
+  addNode(graph, "f1", offset(...CENTER, 30, 100)); // shallow flat detour
+  addNode(graph, "f2", offset(...CENTER, 30, 200));
+  connect(graph, "A", "h1", 100, "footway");
+  connect(graph, "h1", "B", 100, "footway");
+  connect(graph, "A", "f1", 110, "footway");
+  connect(graph, "f1", "f2", 110, "footway");
+  connect(graph, "f2", "B", 110, "footway");
+  graph.elev = new Map([["A", 0], ["B", 0], ["h1", 15], ["f1", 0], ["f2", 0]]);
+  return graph;
+}
+
+test("elevation 'none' avoids the hill, 'high' seeks it", () => {
+  // hill: 200m green (w=80) + 15m climb; flat: 330m green (w=132)
+  const flat = shortestPath(hillGraph(), "A", "B", null, null, "none");
+  assert.deepEqual(flat, ["A", "f1", "f2", "B"]); // 10/m * 15m climbed pushes off the hill
+  const hilly = shortestPath(hillGraph(), "A", "B", null, null, "high");
+  assert.deepEqual(hilly, ["A", "h1", "B"]); // climbing edges discounted
+});
+
+test("elevation gain is reported, null without data", () => {
+  const graph = hillGraph();
+  const route = planRoute(graph, ...CENTER, 300, null, "straight", "low");
+  assert.ok(route.elevationGain !== null);
+  const noData = hillGraph();
+  delete noData.elev;
+  const route2 = planRoute(noData, ...CENTER, 300, null, "straight", "low");
+  assert.equal(route2.elevationGain, null);
+});
+
 // Two ways from A to B: a zigzag that is shorter on paper and a straight chain
 // that is slightly longer. Turn penalties must favor the straight one.
 function zigzagGraph() {

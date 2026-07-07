@@ -29,6 +29,22 @@ export const TURN_PENALTY_REVERSE = 80;
 // so 60 weighted-m ~ 150 m of green detour tolerated to avoid a minor road,
 // and up to ~400 m to avoid crossing a primary road).
 export const CROSS_PENALTY = [0, 60, 110, 160]; // index = road level
+
+// Elevation preference ("none" = flattest, "low" = gentle rises ok, "high" =
+// seek climbs). Penalties in weighted meters per meter climbed; "high" instead
+// discounts climbing edges so the search is drawn toward them.
+export const ELEV_PENALTY_PER_M = { none: 10, low: 1.5, high: 0 };
+const HILL_DISCOUNT_MAX = 0.5; // a steep edge costs as little as half its weight
+
+// Candidate-level scoring nudge: among route candidates, "none" prefers the
+// flattest and "high" the hilliest, judged by average grade (gain / length).
+function elevationScore(elev, gain, lengthM) {
+  if (gain === null || lengthM === 0) return 0;
+  const grade = gain / lengthM;
+  if (elev === "none") return -grade * 20;
+  if (elev === "high") return (Math.min(grade, 0.06) / 0.06) * 0.4;
+  return 0;
+}
 const CROSS_DEDUPE_M = 30; // dual carriageways count once in the stat
 
 export class NoRouteError extends Error {}
@@ -103,6 +119,11 @@ function preparedAdj(graph, u) {
       edge.bearing = bearingDeg(graph, u, edge.to);
       edge.pair = pairKey(u, edge.to);
       edge.road ??= 0;
+      const climb = graph.elev
+        ? Math.max(0, (graph.elev.get(edge.to) ?? 0) - (graph.elev.get(u) ?? 0))
+        : 0;
+      edge.gain = climb;
+      edge.grade = edge.length > 0 ? climb / edge.length : 0;
     }
   }
   return entries;
@@ -117,7 +138,7 @@ function nodeRoadLevel(graph, u) {
 // Turn-aware Dijkstra over (arrived-from, node) states. State keys are
 // "from|node" ("" for the start's from); stateNode preserves original ids.
 // Heap items carry the arrival edge's bearing to avoid lookups.
-function dijkstra(graph, source, used = null, target = null, avoid = null) {
+function dijkstra(graph, source, used = null, target = null, avoid = null, elev = "low") {
   const startKey = `|${source}`;
   const dist = new Map([[startKey, 0]]);
   const prevState = new Map();
@@ -140,6 +161,8 @@ function dijkstra(graph, source, used = null, target = null, avoid = null) {
     for (const edge of preparedAdj(graph, u)) {
       if (edge.to === from) continue; // no immediate U-turns
       let w = edge.w;
+      if (elev === "high") w *= Math.max(HILL_DISCOUNT_MAX, 1 - edge.grade * 5);
+      else w += ELEV_PENALTY_PER_M[elev] * edge.gain;
       if (used && used.has(edge.pair)) w *= REUSE_PENALTY;
       if (avoid && avoid.has(edge.pair)) w *= AVOID_PENALTY;
       if (bearingIn !== null) {
@@ -167,8 +190,8 @@ function statePath(prevState, stateNode, key) {
   return path.reverse();
 }
 
-export function shortestPath(graph, a, b, used, avoid) {
-  const { prevState, stateNode, targetKey } = dijkstra(graph, a, used, b, avoid);
+export function shortestPath(graph, a, b, used, avoid, elev = "low") {
+  const { prevState, stateNode, targetKey } = dijkstra(graph, a, used, b, avoid, elev);
   return targetKey === null ? null : statePath(prevState, stateNode, targetKey);
 }
 
@@ -242,24 +265,26 @@ function* viaPairs(graph, start, legM, tried) {
   }
 }
 
-function evaluateLoop(graph, start, a, b, targetM, avoid) {
-  const leg1 = shortestPath(graph, start, a, null, avoid);
+function evaluateLoop(graph, start, a, b, targetM, avoid, elev) {
+  const leg1 = shortestPath(graph, start, a, null, avoid, elev);
   if (!leg1) return null;
   const used = edgePairs(leg1);
-  const leg2 = shortestPath(graph, a, b, used, avoid);
+  const leg2 = shortestPath(graph, a, b, used, avoid, elev);
   if (!leg2) return null;
   for (const p of edgePairs(leg2)) used.add(p);
-  const leg3 = shortestPath(graph, b, start, used, avoid);
+  const leg3 = shortestPath(graph, b, start, used, avoid, elev);
   if (!leg3) return null;
   const path = [...leg1, ...leg2.slice(1), ...leg3.slice(1)];
   const { length, green } = pathStats(graph, path);
   if (length === 0) return null;
   const deviation = Math.abs(length - targetM) / targetM;
   const greenFraction = green / length;
-  return { score: greenFraction - 2 * deviation, deviation, path, length, greenFraction };
+  const score =
+    greenFraction - 2 * deviation + elevationScore(elev, elevationGain(graph, path), length);
+  return { score, deviation, path, length, greenFraction };
 }
 
-function findLoop(graph, start, targetM, avoid) {
+function findLoop(graph, start, targetM, avoid, elev) {
   // Green-weighted shortest paths meander well past crow-flies distance, so
   // the right via-point spacing is unknown up front: start at target/3 and,
   // while the resulting loops miss the target, rescale the legs by the
@@ -270,7 +295,7 @@ function findLoop(graph, start, targetM, avoid) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const roundLengths = [];
     for (const [a, b] of viaPairs(graph, start, leg, tried)) {
-      const candidate = evaluateLoop(graph, start, a, b, targetM, avoid);
+      const candidate = evaluateLoop(graph, start, a, b, targetM, avoid, elev);
       if (!candidate) continue;
       candidates.push(candidate);
       roundLengths.push(candidate.length);
@@ -299,38 +324,46 @@ function findLoop(graph, start, targetM, avoid) {
 
 // Greenest-path tree from the start: per-state prev pointers plus true/green
 // length, accumulated in increasing weighted distance so parents come first.
-function greenestPathTree(graph, start, avoid) {
-  const tree = dijkstra(graph, start, null, null, avoid);
+function greenestPathTree(graph, start, avoid, elev) {
+  const tree = dijkstra(graph, start, null, null, avoid, elev);
   const order = [...tree.settled].sort((a, b) => tree.dist.get(a) - tree.dist.get(b));
   const lengthTo = new Map([[`|${start}`, 0]]);
   const greenTo = new Map([[`|${start}`, 0]]);
+  const gainTo = new Map([[`|${start}`, 0]]);
   for (const key of order) {
     const parent = tree.prevState.get(key);
     if (parent === undefined) continue; // start state
-    const edge = bestEdge(graph, tree.stateNode.get(parent), tree.stateNode.get(key));
+    const parentNode = tree.stateNode.get(parent);
+    const node = tree.stateNode.get(key);
+    const edge = bestEdge(graph, parentNode, node);
     lengthTo.set(key, lengthTo.get(parent) + edge.length);
     greenTo.set(key, greenTo.get(parent) + (edge.green ? edge.length : 0));
+    const delta = graph.elev
+      ? (graph.elev.get(node) ?? 0) - (graph.elev.get(parentNode) ?? 0)
+      : 0;
+    gainTo.set(key, gainTo.get(parent) + Math.max(0, delta));
   }
-  return { ...tree, lengthTo, greenTo };
+  return { ...tree, lengthTo, greenTo, gainTo };
 }
 
 // State whose tree path best combines greenness with closeness to targetLen.
-function bestTreeState(tree, start, targetLen) {
+function bestTreeState(tree, start, targetLen, elev) {
   let best = null;
   for (const [key, length] of tree.lengthTo) {
     const node = tree.stateNode.get(key);
     if (node === start || length === 0) continue;
     const deviation = Math.abs(length - targetLen) / targetLen;
     const greenFraction = tree.greenTo.get(key) / length;
-    const score = greenFraction - 2 * deviation;
+    const score =
+      greenFraction - 2 * deviation + elevationScore(elev, tree.gainTo.get(key), length);
     if (!best || score > best.score) best = { score, key, length, deviation, greenFraction };
   }
   return best;
 }
 
-function findOutAndBack(graph, start, targetM, avoid) {
-  const tree = greenestPathTree(graph, start, avoid);
-  const best = bestTreeState(tree, start, targetM / 2);
+function findOutAndBack(graph, start, targetM, avoid, elev) {
+  const tree = greenestPathTree(graph, start, avoid, elev);
+  const best = bestTreeState(tree, start, targetM / 2, elev);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const out = statePath(tree.prevState, tree.stateNode, best.key);
   const path = [...out, ...out.slice(0, -1).reverse()];
@@ -341,9 +374,9 @@ function findOutAndBack(graph, start, targetM, avoid) {
 
 // One-way "straight path": the full target distance in one direction along the
 // greenest paths, ending away from the start.
-function findOneWay(graph, start, targetM, avoid) {
-  const tree = greenestPathTree(graph, start, avoid);
-  const best = bestTreeState(tree, start, targetM);
+function findOneWay(graph, start, targetM, avoid, elev) {
+  const tree = greenestPathTree(graph, start, avoid, elev);
+  const best = bestTreeState(tree, start, targetM, elev);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const warnings = [];
   if (best.deviation > LENGTH_TOLERANCE) {
@@ -354,6 +387,27 @@ function findOneWay(graph, start, targetM, avoid) {
   }
   const path = statePath(tree.prevState, tree.stateNode, best.key);
   return toResult(graph, path, best.length, best.greenFraction, "one_way", warnings);
+}
+
+// Total ascent in meters along the path (null when elevation data is missing).
+// A 2 m hysteresis deadband keeps DEM noise between close nodes from
+// accumulating into fake climb.
+const GAIN_DEADBAND_M = 2;
+function elevationGain(graph, path) {
+  if (!graph.elev) return null;
+  let gain = 0;
+  let anchor = graph.elev.get(path[0]) ?? 0;
+  for (let i = 1; i < path.length; i++) {
+    const elev = graph.elev.get(path[i]) ?? 0;
+    const delta = elev - anchor;
+    if (delta >= GAIN_DEADBAND_M) {
+      gain += delta;
+      anchor = elev;
+    } else if (delta <= -GAIN_DEADBAND_M) {
+      anchor = elev;
+    }
+  }
+  return gain;
 }
 
 function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
@@ -369,17 +423,22 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     warnings,
     pairs: [...edgePairs(path)],
     roadsCrossed: countRoadCrossings(graph, path),
+    elevationGain: elevationGain(graph, path),
   };
 }
 
 // shape: "loop" (default) or "straight" (one-way, ends away from the start).
 // avoid: Set of edge pair-keys (from previous results' `pairs`) to steer away
 // from, so "Alternate route" produces a genuinely different loop.
-export function planRoute(graph, lat, lng, targetM, avoid = null, shape = "loop") {
+// elev: "none" (flattest) | "low" (default, gentle rises ok) | "high" (seek climbs).
+export function planRoute(graph, lat, lng, targetM, avoid = null, shape = "loop", elev = "low") {
   if (graph.nodes.size < 2) {
     throw new NoRouteError("no walkable paths found around the start point");
   }
   const start = nearestNode(graph, lat, lng);
-  if (shape === "straight") return findOneWay(graph, start, targetM, avoid);
-  return findLoop(graph, start, targetM, avoid) ?? findOutAndBack(graph, start, targetM, avoid);
+  if (shape === "straight") return findOneWay(graph, start, targetM, avoid, elev);
+  return (
+    findLoop(graph, start, targetM, avoid, elev) ??
+    findOutAndBack(graph, start, targetM, avoid, elev)
+  );
 }

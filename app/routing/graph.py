@@ -8,7 +8,7 @@ import osmnx as ox
 from shapely import STRtree
 from shapely.geometry import Point
 
-from app.routing import scoring
+from app.routing import elevation, scoring
 
 ox.settings.use_cache = True
 ox.settings.cache_folder = os.environ.get(
@@ -77,6 +77,8 @@ def load_scored_graph(
         _mark_park_edges(graph, lat, lng, radius)
     except Exception:
         warnings.append("park boundary data unavailable; greenness is based on path tags only")
+    if not elevation.annotate_elevation(graph):
+        warnings.append("elevation data unavailable; the elevation preference is ignored")
     scoring.score_graph(graph)
 
     if len(_graph_cache) >= _GRAPH_CACHE_MAX:
