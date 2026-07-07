@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Park Run Planner</title>
+<meta name="description" content="Plan running routes that prioritize park connectors and parks over roadside running.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --green: #2e7d32; --green-dark: #1b5e20; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f4f7f4; color: #1a271a; }
+  header { background: var(--green-dark); color: #fff; padding: 0.9rem 1.2rem; }
+  header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+  main { max-width: 760px; margin: 0 auto; padding: 1rem 1.2rem 2rem; }
+  form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; background: #fff;
+         border: 1px solid #d7e2d7; border-radius: 10px; padding: 1rem; }
+  label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; }
+  input { padding: 0.5rem 0.6rem; border: 1px solid #c3d2c3; border-radius: 6px; font-size: 0.95rem; }
+  #address { width: 16rem; }
+  #distance { width: 6rem; }
+  button { padding: 0.55rem 0.9rem; border: 0; border-radius: 6px; font-size: 0.9rem;
+           cursor: pointer; background: #e4ede4; }
+  button.primary { background: var(--green); color: #fff; font-weight: 600; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  #status { margin: 0.8rem 0; font-size: 0.9rem; min-height: 1.2em; }
+  #status.error { color: #b3261e; }
+  #result { display: none; }
+  .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.4rem 0 0.8rem; }
+  .stats div { background: #fff; border: 1px solid #d7e2d7; border-radius: 10px;
+               padding: 0.6rem 1rem; }
+  .stats b { display: block; font-size: 1.25rem; color: var(--green-dark); }
+  .stats span { font-size: 0.75rem; color: #5b6b5b; }
+  a.gmaps { display: inline-block; margin-bottom: 0.8rem; padding: 0.6rem 1rem;
+            background: var(--green); color: #fff; border-radius: 6px; text-decoration: none;
+            font-weight: 600; }
+  #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
+  ul.warnings { color: #8a6d00; font-size: 0.85rem; }
+  footer { margin-top: 1.2rem; font-size: 0.78rem; color: #5b6b5b; }
+  footer a { color: var(--green-dark); }
+</style>
+</head>
+<body>
+<header><h1>🏃 Park Run Planner — routes that stick to park connectors</h1></header>
+<main>
+  <form id="form">
+    <label>Address
+      <input id="address" placeholder="e.g. Bishan Park, Singapore">
+    </label>
+    <label>Distance (km)
+      <input id="distance" type="number" min="1" max="30" step="0.5" value="5" required>
+    </label>
+    <button type="button" id="locate">📍 Use my location</button>
+    <button type="submit" class="primary" id="plan">Plan my run</button>
+  </form>
+  <p id="status"></p>
+  <section id="result">
+    <div class="stats">
+      <div><b id="stat-dist">–</b><span>route length</span></div>
+      <div><b id="stat-green">–</b><span>on parks &amp; connectors</span></div>
+      <div><b id="stat-type">–</b><span>route shape</span></div>
+    </div>
+    <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+    <div id="map"></div>
+    <ul class="warnings" id="warnings"></ul>
+  </section>
+  <footer>
+    Runs entirely in your browser — no server, no API keys.
+    Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+    (via Overpass API); geocoding by Nominatim.
+    <a href="https://github.com/normalwalrus/park-run-planner">Source on GitHub</a>.
+  </footer>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -4,9 +4,22 @@ Plan running routes that stick to **park connectors, parks, and footpaths** inst
 
 Built for Singapore's Park Connector Network (PCN), but it works anywhere OpenStreetMap has decent path coverage.
 
-**How it's different from Google Maps:** Google's Directions API can't be told to prefer parks. This service downloads the OpenStreetMap walking network around your start point, re-weights every path segment by "greenness" (park connectors and park paths are cheap, main roads are expensive), searches for a loop of your target distance on that weighted graph, and only then hands the result to Google Maps as a set of waypoints that pin the route onto the green paths.
+**How it's different from Google Maps:** Google's Directions API can't be told to prefer parks. This planner downloads the OpenStreetMap walking network around your start point, re-weights every path segment by "greenness" (park connectors and park paths are cheap, main roads are expensive), searches for a loop of your target distance on that weighted graph, and only then hands the result to Google Maps as a set of waypoints that pin the route onto the green paths.
 
-## Quick start
+## ✨ Use it now (hosted, free)
+
+**https://normalwalrus.github.io/park-run-planner/**
+
+The hosted version is a static page — the whole routing pipeline (OSM download via Overpass, greenness scoring, loop search) runs in your browser. No server, no API keys. Deep-link a plan with query params:
+
+```
+https://normalwalrus.github.io/park-run-planner/?lat=1.3521&lng=103.8198&distance=5
+https://normalwalrus.github.io/park-run-planner/?address=Bishan%20Park%2C%20Singapore&distance=8
+```
+
+The static app lives in [`docs/`](docs/) (vanilla ES modules, no build step) and mirrors the Python routing in `app/routing/` — the sections below describe the algorithm both share.
+
+## Self-host the API (Python)
 
 Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python 3.12 is resolved automatically).
 
@@ -86,10 +99,14 @@ No API keys needed. Optional environment variables:
 ## Development
 
 ```bash
-uv run pytest                 # unit tests (fast, no network)
+uv run pytest                 # Python unit tests (fast, no network)
 uv run pytest -m integration  # end-to-end against real OSM data
 uv run ruff check .           # lint
 uv run ruff format .          # format
+node --test tests/js/         # tests for the static app's routing port
+python3 -m http.server -d docs 8200   # serve the static app locally
 ```
+
+The routing algorithm exists twice — `app/routing/` (Python, for the API) and `docs/js/` (JavaScript, for the static page). Changes to scoring or loop search should be made in both; each has a matching unit-test suite on synthetic graphs.
 
 Data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors; geocoding by [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) (mind their usage policy for anything beyond personal use).

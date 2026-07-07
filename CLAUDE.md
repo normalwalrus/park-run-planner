@@ -17,6 +17,8 @@ uv run pytest tests/test_loop.py::test_finds_loop_of_target_length  # single tes
 uv run ruff check .                            # lint
 uv run ruff format .                           # format
 uv add <pkg> / uv add --dev <pkg>              # dependencies
+node --test tests/js/                          # tests for the static app (docs/js)
+python3 -m http.server -d docs 8200            # serve the static app locally
 ```
 
 Always run Python tooling through `uv run` — do not pip-install into the system interpreter.
@@ -32,6 +34,10 @@ Google's Directions API cannot be told to prefer parks, so routing happens in-pr
 5. `app/maps.py` — samples ≤9 waypoints evenly along the route into a `google.com/maps/dir/?api=1` walking URL (Google re-routes between waypoints, so waypoints pin the path onto the connectors).
 
 The endpoint in `app/main.py` is deliberately a sync `def` so FastAPI runs the blocking osmnx/networkx work in its threadpool. `static/index.html` (served at `/`) is a dependency-free vanilla-JS page (Leaflet via CDN) that also accepts query params, e.g. `/?lat=1.3521&lng=103.8198&distance=5`, to auto-plan.
+
+## The static app (`docs/`)
+
+`docs/` is a standalone, fully client-side port of the same pipeline, hosted free on GitHub Pages (https://normalwalrus.github.io/park-run-planner/, deployed from `master:/docs` on push, no build step). ES modules mirror the Python one-to-one: `docs/js/overpass.js` ↔ `app/routing/graph.py` (Overpass API instead of osmnx; ray-cast point-in-polygon for parks), `docs/js/scoring.js` ↔ `scoring.py`, `docs/js/loop.js` ↔ `loop.py` (own binary-heap Dijkstra), `docs/js/maps.js` ↔ `maps.py`, `docs/js/geocode.js` ↔ `geocode.py`. **Algorithm changes must be applied to both implementations**, each with its matching unit tests (`tests/test_*.py` and `tests/js/*.test.mjs` use the same synthetic ring/line graphs). The root `package.json` exists only to set `"type": "module"` so `node --test` can import `docs/js/*.js`.
 
 ## Testing conventions
 
