@@ -6,86 +6,162 @@
 <title>Park Run Planner</title>
 <meta name="description" content="Plan running routes that prioritize park connectors and parks over roadside running.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --green: #2e7d32; --green-dark: #1b5e20; }
+  :root {
+    --canopy: #1d3a2a;   /* forest ink */
+    --fern: #2f7d46;     /* action green */
+    --fern-deep: #226237;
+    --leaf: #d9ecc8;     /* soft leaf wash */
+    --mist: #f3f7ef;     /* green-tinted ground */
+    --trail: #e8622c;    /* runner-vest orange, for overrun + small accents */
+    --bark: #5d6f5e;     /* secondary text */
+    --line: #d5e4d0;
+    --card-shadow: 0 8px 24px rgba(29, 58, 42, 0.08);
+    --error: #b3261e;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: #f4f7f4; color: #1a271a; }
-  header { background: var(--green-dark); color: #fff; padding: 0.9rem 1.2rem; }
-  header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
-  main { max-width: 760px; margin: 0 auto; padding: 1rem 1.2rem 2rem; }
-  form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; background: #fff;
-         border: 1px solid #d7e2d7; border-radius: 10px; padding: 1rem; }
-  label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; }
-  input { padding: 0.5rem 0.6rem; border: 1px solid #c3d2c3; border-radius: 6px; font-size: 0.95rem; }
-  #address { width: 16rem; }
-  #distance { width: 6rem; }
-  button { padding: 0.55rem 0.9rem; border: 0; border-radius: 6px; font-size: 0.9rem;
-           cursor: pointer; background: #e4ede4; }
-  button.primary { background: var(--green); color: #fff; font-weight: 600; }
-  button:disabled { opacity: 0.6; cursor: wait; }
-  #status-card { margin: 0.9rem 0; padding: 0.85rem 1.1rem; background: #fff;
-                 border: 1px solid #bcd6bc; border-left: 6px solid var(--green);
-                 border-radius: 10px; box-shadow: 0 2px 12px rgba(46, 125, 50, 0.14); }
-  #status-card.error { border-left-color: #b3261e; box-shadow: 0 2px 12px rgba(179, 38, 30, 0.12); }
-  #status-card.error #status-text { color: #b3261e; }
-  #status-card.done { border-left-color: #2e7d32; background: #f0f7f0; }
-  .status-top { display: flex; justify-content: space-between; align-items: baseline;
-                gap: 1rem; font-size: 0.95rem; font-weight: 600; }
-  #status-time { font-variant-numeric: tabular-nums; color: var(--green-dark);
-                 white-space: nowrap; font-size: 0.9rem; }
-  .bar { height: 10px; margin-top: 0.6rem; background: #e4ede4; border-radius: 999px;
-         overflow: hidden; }
-  #bar-fill { height: 100%; width: 0%; border-radius: 999px; transition: width 0.25s linear;
-              background: linear-gradient(90deg, #43a047, #9ccc65, #43a047);
-              background-size: 200% 100%; animation: shimmer 1.3s linear infinite; }
-  #status-card.overrun #bar-fill { background: linear-gradient(90deg, #ef6c00, #ffb74d, #ef6c00);
-                                   background-size: 200% 100%; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
-  @media (prefers-reduced-motion: reduce) { #bar-fill { animation: none; } }
-  #result { display: none; }
-  .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.4rem 0 0.8rem; }
-  .stats div { background: #fff; border: 1px solid #d7e2d7; border-radius: 10px;
-               padding: 0.6rem 1rem; }
-  .stats b { display: block; font-size: 1.25rem; color: var(--green-dark); }
-  .stats span { font-size: 0.75rem; color: #5b6b5b; }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
-             margin-bottom: 0.8rem; }
-  a.gmaps { display: inline-block; padding: 0.6rem 1rem;
-            background: var(--green); color: #fff; border-radius: 6px; text-decoration: none;
-            font-weight: 600; }
-  #alt { padding: 0.6rem 1rem; background: #fff; color: var(--green-dark);
-         border: 2px solid var(--green); border-radius: 6px; font-weight: 600; }
-  #alt:hover:not(:disabled) { background: #e8f2e8; }
-  #clear { position: absolute; right: 0.25rem; top: 1.15rem; transform: translateY(-50%);
-           background: none; border: 0; padding: 0.15rem 0.45rem; font-size: 0.95rem;
-           color: #5b6b5b; cursor: pointer; border-radius: 4px; }
-  #clear:hover { color: #1a271a; background: #e4ede4; }
-  .suggest input { padding-right: 2.1rem; }
-  .shape-toggle { display: inline-flex; border: 1px solid #c3d2c3; border-radius: 6px;
+  body { margin: 0; font-family: "Outfit", system-ui, sans-serif; background: var(--mist);
+         color: var(--canopy); line-height: 1.5; }
+
+  header { background: linear-gradient(130deg, #142b1d 0%, #1f5230 70%, #2a6b3e 100%);
+           color: var(--mist); padding: 1.3rem 1.4rem 1.1rem; }
+  .brand { max-width: 800px; margin: 0 auto; display: flex; gap: 0.85rem; align-items: center; }
+  .brand .mark { font-size: 1.9rem; }
+  header h1 { margin: 0; font-family: "Barlow Condensed", sans-serif; font-weight: 700;
+              font-size: 1.85rem; letter-spacing: 0.07em; text-transform: uppercase;
+              line-height: 1.05; }
+  header p { margin: 0.15rem 0 0; font-size: 0.86rem; color: #cfe3c4; font-weight: 400; }
+  .trail-divider { height: 5px;
+                   background: repeating-linear-gradient(90deg,
+                     var(--leaf) 0 16px, transparent 16px 30px); }
+
+  main { max-width: 800px; margin: 0 auto; padding: 1.3rem 1.2rem 2.5rem; }
+
+  form { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: end; background: #fff;
+         border: 1px solid var(--line); border-radius: 18px; padding: 1.15rem 1.25rem;
+         box-shadow: var(--card-shadow); }
+  form > label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem;
+                 font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+                 color: var(--bark); }
+  input { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 11px;
+          font-size: 0.98rem; font-family: inherit; color: var(--canopy); background: #fff;
+          transition: border-color 0.15s; }
+  input:focus { outline: 3px solid rgba(47, 125, 70, 0.22); border-color: var(--fern); }
+  #address { width: 17rem; }
+  #distance { width: 6.2rem; }
+
+  button { padding: 0.62rem 1.15rem; border: 0; border-radius: 999px; font-size: 0.92rem;
+           font-family: inherit; font-weight: 600; cursor: pointer;
+           background: var(--leaf); color: var(--canopy); transition: background 0.15s; }
+  button:hover:not(:disabled) { background: #cbe4b4; }
+  button.primary { background: var(--fern); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--fern-deep); }
+  button:disabled { opacity: 0.55; cursor: wait; }
+  button:focus-visible, input:focus-visible, a:focus-visible {
+    outline: 3px solid rgba(47, 125, 70, 0.45); outline-offset: 2px; }
+
+  .shape-toggle { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px;
                   overflow: hidden; background: #fff; }
-  .shape-toggle label { flex-direction: row; padding: 0.5rem 0.8rem; font-weight: 400;
-                        font-size: 0.9rem; cursor: pointer; }
-  .shape-toggle label:has(input:checked) { background: var(--green); color: #fff;
+  .shape-toggle label { flex-direction: row; padding: 0.55rem 1rem; font-weight: 500;
+                        font-size: 0.9rem; cursor: pointer; color: var(--bark);
+                        text-transform: none; letter-spacing: 0; }
+  .shape-toggle label:has(input:checked) { background: var(--fern); color: #fff;
                                            font-weight: 600; }
   .shape-toggle input { position: absolute; opacity: 0; pointer-events: none; }
-  #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
+
   .suggest { position: relative; display: block; }
-  #suggestions { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 1100;
-                 width: max(100%, 22rem); max-width: 80vw; margin: 0; padding: 0.25rem;
-                 list-style: none; background: #fff; border: 1px solid #c3d2c3;
-                 border-radius: 8px; box-shadow: 0 6px 18px rgba(26, 39, 26, 0.15); }
-  #suggestions li { padding: 0.45rem 0.6rem; border-radius: 6px; cursor: pointer;
-                    font-weight: 400; }
-  #suggestions li b { display: block; font-size: 0.9rem; font-weight: 600; }
-  #suggestions li small { color: #5b6b5b; font-size: 0.75rem; }
-  #suggestions li.active, #suggestions li:hover { background: #e8f2e8; }
-  ul.warnings { color: #8a6d00; font-size: 0.85rem; }
-  footer { margin-top: 1.2rem; font-size: 0.78rem; color: #5b6b5b; }
-  footer a { color: var(--green-dark); }
+  .suggest input { width: 100%; padding-right: 2.2rem; }
+  #clear { position: absolute; right: 0.3rem; top: 50%; transform: translateY(-50%);
+           background: none; border: 0; padding: 0.18rem 0.5rem; font-size: 0.9rem;
+           color: var(--bark); cursor: pointer; border-radius: 999px; }
+  #clear:hover { color: var(--canopy); background: var(--leaf); }
+  #suggestions { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 1100;
+                 width: max(100%, 23rem); max-width: 82vw; margin: 0; padding: 0.35rem;
+                 list-style: none; background: #fff; border: 1px solid var(--line);
+                 border-radius: 14px; box-shadow: 0 14px 34px rgba(29, 58, 42, 0.18); }
+  #suggestions li { padding: 0.5rem 0.7rem; border-radius: 9px; cursor: pointer;
+                    font-weight: 400; text-transform: none; letter-spacing: 0;
+                    color: var(--canopy); }
+  #suggestions li b { display: block; font-size: 0.92rem; font-weight: 600; }
+  #suggestions li small { color: var(--bark); font-size: 0.76rem; }
+  #suggestions li.active, #suggestions li:hover { background: var(--leaf); }
+
+  /* Status card: the progress bar is a trail with a runner on it. */
+  #status-card { margin: 1rem 0; padding: 0.95rem 1.2rem 1.05rem; background: #fff;
+                 border: 1px solid var(--line); border-radius: 16px;
+                 box-shadow: var(--card-shadow); }
+  #status-card.error { border-color: #e6c4c1; }
+  #status-card.error #status-text { color: var(--error); }
+  #status-card.done { background: linear-gradient(180deg, #ffffff, #f2f9ec); }
+  .status-top { display: flex; justify-content: space-between; align-items: baseline;
+                gap: 1rem; font-size: 0.97rem; font-weight: 600; }
+  #status-time { font-variant-numeric: tabular-nums; color: var(--fern-deep);
+                 white-space: nowrap; font-size: 0.88rem; font-weight: 500; }
+  #status-card.overrun #status-time { color: var(--trail); }
+  .bar { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+  .bar[hidden] { display: none; }
+  .track { position: relative; flex: 1; height: 12px; border-radius: 999px;
+           background: #eaf2e3 repeating-linear-gradient(90deg,
+             transparent 0 12px, #d3e4c9 12px 20px); }
+  #bar-fill { height: 100%; width: 0%; border-radius: 999px; transition: width 0.25s linear;
+              background: linear-gradient(90deg, var(--fern), #6fae53); }
+  #status-card.overrun #bar-fill { background: linear-gradient(90deg, var(--trail), #f19a5e); }
+  #bar-runner { position: absolute; top: -0.85rem; left: 0; font-size: 1.15rem;
+                transition: left 0.25s linear; }
+  .finish { font-size: 0.95rem; }
+
+  #result { display: none; }
+  .stats { display: flex; gap: 0.9rem; flex-wrap: wrap; margin: 0.4rem 0 1rem; }
+  .stats div { background: #fff; border: 1px solid var(--line); border-radius: 14px;
+               padding: 0.7rem 1.2rem 0.6rem; min-width: 8rem; box-shadow: var(--card-shadow); }
+  .stats b { display: block; font-family: "Barlow Condensed", sans-serif; font-weight: 700;
+             font-size: 2rem; line-height: 1.1; color: var(--canopy);
+             font-variant-numeric: tabular-nums; }
+  .stats span { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.09em;
+                text-transform: uppercase; color: var(--bark); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center;
+             margin-bottom: 1rem; }
+  a.gmaps { display: inline-block; padding: 0.65rem 1.25rem; background: var(--fern);
+            color: #fff; border-radius: 999px; text-decoration: none; font-weight: 600;
+            font-size: 0.95rem; }
+  a.gmaps:hover { background: var(--fern-deep); }
+  #alt { background: #fff; color: var(--fern-deep); border: 2px solid var(--fern); }
+  #alt:hover:not(:disabled) { background: var(--leaf); }
+
+  #map { height: 440px; border-radius: 18px; border: 1px solid var(--line);
+         box-shadow: var(--card-shadow); }
+  ul.warnings { color: #9a6b00; font-size: 0.86rem; margin: 0.7rem 0; }
+
+  footer { margin-top: 1.4rem; font-size: 0.78rem; color: var(--bark); }
+  footer a { color: var(--fern-deep); }
+
+  @media (max-width: 640px) {
+    header h1 { font-size: 1.5rem; }
+    #address { width: 100%; }
+    .suggest { width: 100%; }
+    form > label:first-child { width: 100%; }
+    #map { height: 340px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #bar-fill, #bar-runner, input, button { transition: none; }
+  }
 </style>
 </head>
 <body>
-<header><h1>🏃 Park Run Planner — routes that stick to park connectors</h1></header>
+<header>
+  <div class="brand">
+    <span class="mark" aria-hidden="true">🏃</span>
+    <div>
+      <h1>Park Run Planner</h1>
+      <p>The greenest running routes on Singapore's park connectors</p>
+    </div>
+  </div>
+</header>
+<div class="trail-divider" aria-hidden="true"></div>
 <main>
   <form id="form">
     <label>Place or postal code (Singapore)
@@ -113,7 +189,13 @@
       <span id="status-text"></span>
       <span id="status-time"></span>
     </div>
-    <div class="bar" id="bar" hidden><div id="bar-fill"></div></div>
+    <div class="bar" id="bar" hidden>
+      <div class="track">
+        <div id="bar-fill"></div>
+        <span id="bar-runner" aria-hidden="true">🏃</span>
+      </div>
+      <span class="finish" aria-hidden="true">🏁</span>
+    </div>
   </div>
   <section id="result">
     <div class="stats">

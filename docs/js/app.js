@@ -80,11 +80,16 @@ function elapsedSeconds() {
   return (performance.now() - startedAt) / 1000;
 }
 
+function setTrailProgress(pct) {
+  $("bar-fill").style.width = `${pct}%`;
+  $("bar-runner").style.left = `calc(${pct}% - 0.55rem)`;
+}
+
 function tick() {
   const elapsed = elapsedSeconds();
   const overrun = elapsed > estimateS;
   card.classList.toggle("overrun", overrun);
-  $("bar-fill").style.width = `${Math.min((elapsed / estimateS) * 100, 97)}%`;
+  setTrailProgress(Math.min((elapsed / estimateS) * 100, 97));
   $("status-time").textContent = overrun
     ? `${elapsed.toFixed(1)} s — taking longer than expected`
     : `${elapsed.toFixed(1)} s elapsed · ~${Math.round(estimateS)} s expected`;
@@ -96,7 +101,7 @@ function endProgress(kind, message) {
   card.className = kind;
   $("status-text").textContent = message;
   if (kind === "done") {
-    $("bar-fill").style.width = "100%";
+    setTrailProgress(100);
     $("status-time").textContent = `done in ${elapsed.toFixed(1)} s`;
   } else {
     $("bar").hidden = true;
