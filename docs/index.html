@@ -35,12 +35,16 @@
             background: var(--green); color: #fff; border-radius: 6px; text-decoration: none;
             font-weight: 600; }
   #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
-  .spot-row { margin: 0.8rem 0 0; font-size: 0.8rem; color: #5b6b5b; display: flex;
-              flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-  #spots { display: contents; }
-  button.spot { padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.8rem;
-                background: #e4ede4; color: #1a271a; }
-  button.spot:hover { background: #d3e3d3; }
+  .suggest { position: relative; display: block; }
+  #suggestions { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 1100;
+                 width: max(100%, 22rem); max-width: 80vw; margin: 0; padding: 0.25rem;
+                 list-style: none; background: #fff; border: 1px solid #c3d2c3;
+                 border-radius: 8px; box-shadow: 0 6px 18px rgba(26, 39, 26, 0.15); }
+  #suggestions li { padding: 0.45rem 0.6rem; border-radius: 6px; cursor: pointer;
+                    font-weight: 400; }
+  #suggestions li b { display: block; font-size: 0.9rem; font-weight: 600; }
+  #suggestions li small { color: #5b6b5b; font-size: 0.75rem; }
+  #suggestions li.active, #suggestions li:hover { background: #e8f2e8; }
   ul.warnings { color: #8a6d00; font-size: 0.85rem; }
   footer { margin-top: 1.2rem; font-size: 0.78rem; color: #5b6b5b; }
   footer a { color: var(--green-dark); }
@@ -50,9 +54,12 @@
 <header><h1>🏃 Park Run Planner — routes that stick to park connectors</h1></header>
 <main>
   <form id="form">
-    <label>Address (Singapore)
-      <input id="address" list="spot-options" placeholder="e.g. Bishan Park">
-      <datalist id="spot-options"></datalist>
+    <label>Place or postal code (Singapore)
+      <span class="suggest">
+        <input id="address" placeholder="e.g. Bishan Park or 560406" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="suggestions">
+        <ul id="suggestions" role="listbox"></ul>
+      </span>
     </label>
     <label>Distance (km)
       <input id="distance" type="number" min="1" max="30" step="0.5" value="5" required>
@@ -60,7 +67,6 @@
     <button type="button" id="locate">📍 Use my location</button>
     <button type="submit" class="primary" id="plan">Plan my run</button>
   </form>
-  <div class="spot-row"><span>Popular spots:</span><span id="spots"></span></div>
   <p id="status"></p>
   <section id="result">
     <div class="stats">
@@ -75,7 +81,8 @@
   <footer>
     Runs entirely in your browser — no server, no API keys.
     Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
-    (via Overpass API); geocoding by Nominatim.
+    (via Overpass API); search powered by <a href="https://www.onemap.gov.sg/">OneMap</a>
+    © Singapore Land Authority.
     <a href="https://github.com/normalwalrus/park-run-planner">Source on GitHub</a>.
   </footer>
 </main>

@@ -2,7 +2,7 @@
 
 Plan running routes that stick to **park connectors, parks, and footpaths** instead of roadside pavements. Give it where you are (or an address) and how far you want to run, and it returns a loop of roughly that distance plus a **Google Maps walking link** you can follow on your phone.
 
-Built for Singapore: the planner is scoped to Singapore's Park Connector Network (PCN) and parks — the map is locked to the island, addresses are geocoded within Singapore only, locations outside Singapore are rejected, and the app suggests popular running spots (East Coast Park, MacRitchie, Bishan-AMK Park, …) to start from.
+Built for Singapore: the planner is scoped to Singapore's Park Connector Network (PCN) and parks — the map is locked to the island and locations outside Singapore are rejected. Start-point search is powered by [OneMap](https://www.onemap.gov.sg/) (© Singapore Land Authority): as you type, a dropdown suggests places, addresses, and 6-digit postal codes, with popular running spots (East Coast Park, MacRitchie, Bishan-AMK Park, …) ranked first; picking a suggestion plans the run immediately.
 
 **How it's different from Google Maps:** Google's Directions API can't be told to prefer parks. This planner downloads the OpenStreetMap walking network around your start point, re-weights every path segment by "greenness" (park connectors and park paths are cheap, main roads are expensive), searches for a loop of your target distance on that weighted graph, and only then hands the result to Google Maps as a set of waypoints that pin the route onto the green paths.
 
@@ -53,7 +53,7 @@ Request body — either coordinates or an address, plus a distance:
 | field | type | notes |
 |---|---|---|
 | `lat`, `lng` | float | start coordinates (e.g. from browser geolocation); must be within Singapore |
-| `address` | string | free-text, geocoded via Nominatim restricted to Singapore (used when no coords) |
+| `address` | string | place name, street address, or 6-digit postal code, resolved via OneMap (used when no coords) |
 | `distance_km` | float | 1–30 |
 
 Response:
@@ -94,7 +94,7 @@ No API keys needed. Optional environment variables:
 | variable | default | purpose |
 |---|---|---|
 | `OSM_CACHE_DIR` | `~/.cache/api-app/osmnx` | disk cache for OSM downloads |
-| `NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | alternate geocoder (e.g. self-hosted) |
+| `ONEMAP_URL` | `https://www.onemap.gov.sg` | alternate OneMap endpoint (Python API only) |
 
 ## Development
 
@@ -109,4 +109,4 @@ python3 -m http.server -d docs 8200   # serve the static app locally
 
 The routing algorithm exists twice — `app/routing/` (Python, for the API) and `docs/js/` (JavaScript, for the static page). Changes to scoring or loop search should be made in both; each has a matching unit-test suite on synthetic graphs.
 
-Data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors; geocoding by [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) (mind their usage policy for anything beyond personal use).
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (via Overpass API); search powered by [OneMap](https://www.onemap.gov.sg/) © Singapore Land Authority.

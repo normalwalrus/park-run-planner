@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Park Run Planner — a FastAPI service that plans running loops preferring park connectors (Singapore PCN), parks, and footpaths over roadside running, returned as a Google Maps walking-directions link. **Singapore-only by design**: `SG_BOUNDS` in `app/geocode.py` and `docs/js/geo.js` gates all locations, Nominatim queries are restricted to `countrycodes=sg` + bounded viewbox, and the static app's Leaflet map is locked to the island with a curated popular-spots list (`SPOTS` in `docs/js/app.js`). Managed with [uv](https://docs.astral.sh/uv/), Python 3.12 (pinned in `.python-version`); all dependencies and tool config live in `pyproject.toml`.
+Park Run Planner — a FastAPI service that plans running loops preferring park connectors (Singapore PCN), parks, and footpaths over roadside running, returned as a Google Maps walking-directions link. **Singapore-only by design**: `SG_BOUNDS` in `app/geocode.py` and `docs/js/geo.js` gates all locations, geocoding/search uses Singapore's OneMap API (places, addresses, and postal codes; no key needed), and the static app's Leaflet map is locked to the island. The static app has a type-ahead suggestion dropdown (`docs/js/app.js` + `mergeSuggestions` in `docs/js/geocode.js`) that ranks the curated `SPOTS` list first; picking a suggestion plans immediately, and interactive free-text submits require a pick (deep links auto-resolve to the top match). Managed with [uv](https://docs.astral.sh/uv/), Python 3.12 (pinned in `.python-version`); all dependencies and tool config live in `pyproject.toml`.
 
 ## Commands
 
@@ -27,7 +27,7 @@ Always run Python tooling through `uv run` — do not pip-install into the syste
 
 Google's Directions API cannot be told to prefer parks, so routing happens in-process on OpenStreetMap data; Google Maps is only the output format. The pipeline for `POST /api/routes/plan`:
 
-1. `app/geocode.py` — resolves a free-text address via Nominatim (skipped when lat/lng given).
+1. `app/geocode.py` — resolves a place / address / postal code via OneMap (skipped when lat/lng given).
 2. `app/routing/graph.py` — downloads the OSM walking network around the start (`osmnx`), radius scaled to the requested distance, marks edges inside park polygons (`in_park`) via an STRtree spatial join, then scores it. Two cache layers: osmnx's HTTP disk cache (`OSM_CACHE_DIR`, default `~/.cache/api-app/osmnx`) and an in-process LRU of scored graphs.
 3. `app/routing/scoring.py` — assigns each edge `w = length × factor`: 0.4 for green (footway/path/cycleway tags, "Park Connector"/PCN names, park interiors), 1.0 neutral, 2.5 for big roads. `green` flag drives the reported green fraction.
 4. `app/routing/loop.py` — triangle heuristic: via-points on a fan of bearings, three weighted shortest paths (already-used edges penalized ×3 to avoid retracing). Green-weighted paths meander far past crow-flies distance, so the via-point leg is rescaled by the median overshoot ratio over up to 3 rounds. Falls back to an out-and-back along the greenest path when no loop lands within ±20% of target.
@@ -41,4 +41,4 @@ The endpoint in `app/main.py` is deliberately a sync `def` so FastAPI runs the b
 
 ## Testing conventions
 
-Unit tests never touch the network: `test_loop.py` builds synthetic ring/line graphs with real lat/lng geometry (see its `ring_graph`/`line_graph` helpers), `test_api.py` monkeypatches `app.routing.graph.load_scored_graph` and `app.routing.loop.plan_route`. Anything hitting OSM/Nominatim gets `@pytest.mark.integration` (excluded by default via `addopts`). First integration/graph request for an area takes ~20 s (Overpass download); repeats are fast via the disk cache.
+Unit tests never touch the network: `test_loop.py` builds synthetic ring/line graphs with real lat/lng geometry (see its `ring_graph`/`line_graph` helpers), `test_api.py` monkeypatches `app.routing.graph.load_scored_graph` and `app.routing.loop.plan_route`. Anything hitting OSM/OneMap gets `@pytest.mark.integration` (excluded by default via `addopts`). First integration/graph request for an area takes ~20 s (Overpass download); repeats are fast via the disk cache.
