@@ -26,7 +26,10 @@ const SPOTS = [
 
 let coords = null;
 let routeLayer = null;
-let lastRun = null; // {start, distanceKm, avoid: Set, pairs} of the shown route
+const MAX_CACHED_ROUTES = 3;
+// One planning session per "Plan my run" press: routes generated for the same
+// start/distance/shape, of which the newest MAX_CACHED_ROUTES stay switchable.
+let session = null; // {start, distanceKm, shape, avoid, routes: [{id, route}], counter, activeId}
 const $ = (id) => document.getElementById(id);
 
 // Map is shown from the start, locked to Singapore.
@@ -260,9 +263,18 @@ $("form").addEventListener("submit", async (event) => {
     return;
   }
   if (!inSingapore(coords.lat, coords.lng)) return showStatus(OUTSIDE_SG, "error");
+  session = {
+    start: coords,
+    distanceKm,
+    shape: selectedShape(),
+    avoid: new Set(),
+    routes: [],
+    counter: 0,
+    activeId: null,
+  };
   $("plan").disabled = true;
   try {
-    await plan(coords, distanceKm, new Set(), false, selectedShape());
+    await runPlan(false);
   } finally {
     $("plan").disabled = false;
   }
@@ -274,7 +286,8 @@ function estimateSeconds(start, graphDistanceM, distanceKm) {
   return download + searchTime;
 }
 
-async function plan(start, distanceKm, avoid = new Set(), alternate = false, shape = "loop") {
+async function runPlan(alternate) {
+  const { start, distanceKm, shape } = session;
   // A one-way route ranges up to the full distance from the start, a loop ~half.
   const graphDistanceM = shape === "straight" ? distanceKm * 2000 : distanceKm * 1000;
   startProgress(
@@ -285,9 +298,12 @@ async function plan(start, distanceKm, avoid = new Set(), alternate = false, sha
     const graph = await loadGraph(start.lat, start.lng, graphDistanceM);
     setStage(alternate ? "Searching for an alternate route…" : "Searching for the greenest route…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
-    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, avoid, shape);
-    lastRun = { start, distanceKm, avoid, pairs: route.pairs, shape };
-    showResult(start, route);
+    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, session.avoid, shape);
+    for (const pair of route.pairs) session.avoid.add(pair); // future alternates steer away
+    const entry = { id: ++session.counter, route };
+    session.routes.push(entry);
+    if (session.routes.length > MAX_CACHED_ROUTES) session.routes.shift();
+    selectRoute(entry.id);
     endProgress(
       "done",
       `${alternate ? "Alternate route" : "Route"} ready: ` +
@@ -300,13 +316,42 @@ async function plan(start, distanceKm, avoid = new Set(), alternate = false, sha
   }
 }
 
+// Cached-route tabs: click to re-view a recent route without re-planning.
+function renderRouteTabs() {
+  const tabs = $("route-tabs");
+  tabs.classList.toggle("visible", session.routes.length > 1);
+  tabs.innerHTML = session.routes
+    .map(
+      ({ id, route }) => `
+      <button type="button" role="tab" data-id="${id}"
+              aria-selected="${id === session.activeId}"
+              class="${id === session.activeId ? "active" : ""}">
+        <b>Route ${id}</b> · ${(route.lengthM / 1000).toFixed(1)} km ·
+        ${Math.round(route.greenFraction * 100)}%
+      </button>`
+    )
+    .join("");
+}
+
+function selectRoute(id) {
+  const entry = session.routes.find((r) => r.id === id);
+  if (!entry) return;
+  session.activeId = id;
+  renderRouteTabs();
+  showResult(session.start, entry.route);
+}
+
+$("route-tabs").addEventListener("click", (event) => {
+  const tab = event.target.closest("button[data-id]");
+  if (tab) selectRoute(Number(tab.dataset.id));
+});
+
 // Re-plan with the same start and distance, steering away from routes already shown.
 $("alt").addEventListener("click", async () => {
-  if (!lastRun) return;
-  for (const pair of lastRun.pairs) lastRun.avoid.add(pair);
+  if (!session) return;
   $("plan").disabled = $("alt").disabled = true;
   try {
-    await plan(lastRun.start, lastRun.distanceKm, lastRun.avoid, true, lastRun.shape);
+    await runPlan(true);
   } finally {
     $("plan").disabled = $("alt").disabled = false;
   }
