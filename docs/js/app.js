@@ -2,7 +2,7 @@
 
 import { geocode, search, mergeSuggestions } from "./geocode.js";
 import { SG_BOUNDS, inSingapore } from "./geo.js";
-import { loadGraph } from "./overpass.js";
+import { loadGraph, isGraphCached } from "./overpass.js";
 import { planRoute, NoRouteError } from "./loop.js";
 import { googleMapsUrl } from "./maps.js";
 
@@ -42,6 +42,71 @@ map.setView(SG_CENTER, 12);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
+
+// ---- Status card / progress -------------------------------------------------
+
+const card = $("status-card");
+let tickTimer = null;
+let startedAt = 0;
+let estimateS = 0;
+
+function showStatus(message, kind = "info") {
+  stopTicker();
+  card.hidden = false;
+  card.className = kind === "error" ? "error" : kind === "done" ? "done" : "";
+  $("status-text").textContent = message;
+  $("status-time").textContent = "";
+  $("bar").hidden = true;
+}
+
+function startProgress(message, seconds) {
+  card.hidden = false;
+  card.className = "";
+  $("status-text").textContent = message;
+  $("bar").hidden = false;
+  startedAt = performance.now();
+  estimateS = seconds;
+  stopTicker();
+  tickTimer = setInterval(tick, 100);
+  tick();
+}
+
+function setStage(message) {
+  $("status-text").textContent = message;
+}
+
+function elapsedSeconds() {
+  return (performance.now() - startedAt) / 1000;
+}
+
+function tick() {
+  const elapsed = elapsedSeconds();
+  const overrun = elapsed > estimateS;
+  card.classList.toggle("overrun", overrun);
+  $("bar-fill").style.width = `${Math.min((elapsed / estimateS) * 100, 97)}%`;
+  $("status-time").textContent = overrun
+    ? `${elapsed.toFixed(1)} s — taking longer than expected`
+    : `${elapsed.toFixed(1)} s elapsed · ~${Math.round(estimateS)} s expected`;
+}
+
+function endProgress(kind, message) {
+  const elapsed = elapsedSeconds();
+  stopTicker();
+  card.className = kind;
+  $("status-text").textContent = message;
+  if (kind === "done") {
+    $("bar-fill").style.width = "100%";
+    $("status-time").textContent = `done in ${elapsed.toFixed(1)} s`;
+  } else {
+    $("bar").hidden = true;
+    $("status-time").textContent = "";
+  }
+}
+
+function stopTicker() {
+  clearInterval(tickTimer);
+  tickTimer = null;
+}
 
 // ---- Type-ahead suggestions -------------------------------------------------
 
@@ -97,13 +162,14 @@ function closeSuggestions() {
   input.setAttribute("aria-expanded", "false");
 }
 
+// Picking only sets the start point — "Plan my run" starts the planning.
 function pickSuggestion(index) {
   const s = suggestions[index];
   if (!s) return;
   coords = { lat: s.lat, lng: s.lng };
   input.value = s.name;
   closeSuggestions();
-  $("form").requestSubmit(); // plan immediately
+  showStatus(`Start point set: ${s.name}. Press “Plan my run” to plan your route.`);
 }
 
 // mousedown (not click) so selection beats the input's blur.
@@ -135,16 +201,19 @@ input.addEventListener("blur", () => setTimeout(closeSuggestions, 150));
 // ---- Location + planning ----------------------------------------------------
 
 $("locate").addEventListener("click", () => {
-  setStatus("Locating…");
+  showStatus("Locating…");
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      if (!inSingapore(here.lat, here.lng)) return setStatus(OUTSIDE_SG, true);
+      if (!inSingapore(here.lat, here.lng)) return showStatus(OUTSIDE_SG, "error");
       coords = here;
       input.value = "";
-      setStatus(`Using current location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+      showStatus(
+        `Start point set: your location (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}). ` +
+          "Press “Plan my run” to plan your route."
+      );
     },
-    () => setStatus("Could not get your location — search for a place instead.", true)
+    () => showStatus("Could not get your location — search for a place instead.", "error")
   );
 });
 
@@ -153,18 +222,18 @@ $("form").addEventListener("submit", async (event) => {
   closeSuggestions();
   const distanceKm = parseFloat($("distance").value);
   if (!(distanceKm >= 1 && distanceKm <= 30)) {
-    return setStatus("Distance must be between 1 and 30 km.", true);
+    return showStatus("Distance must be between 1 and 30 km.", "error");
   }
   if (!coords) {
     if (input.value.trim()) {
-      setStatus("Pick a suggestion from the dropdown to choose your start point.", true);
+      showStatus("Pick a suggestion from the dropdown to choose your start point.", "error");
       runSearch(input.value.trim());
     } else {
-      setStatus("Search for a place or postal code, or use your location.", true);
+      showStatus("Search for a place or postal code, or use your location.", "error");
     }
     return;
   }
-  if (!inSingapore(coords.lat, coords.lng)) return setStatus(OUTSIDE_SG, true);
+  if (!inSingapore(coords.lat, coords.lng)) return showStatus(OUTSIDE_SG, "error");
   $("plan").disabled = true;
   try {
     await plan(coords, distanceKm);
@@ -173,24 +242,29 @@ $("form").addEventListener("submit", async (event) => {
   }
 });
 
+function estimateSeconds(start, distanceKm) {
+  const download = isGraphCached(start.lat, start.lng, distanceKm * 1000) ? 1 : 15;
+  const searchTime = 1 + distanceKm * 0.2; // loop search grows with area
+  return download + searchTime;
+}
+
 async function plan(start, distanceKm) {
+  startProgress("Downloading map data for this area…", estimateSeconds(start, distanceKm));
   try {
-    setStatus("Downloading map data — first time for an area can take ~10 s…");
     const graph = await loadGraph(start.lat, start.lng, distanceKm * 1000);
-    setStatus("Searching for the greenest loop…");
+    setStage("Searching for the greenest loop…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
     const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000);
     showResult(start, route);
-    setStatus("");
+    endProgress(
+      "done",
+      `Route ready: ${(route.lengthM / 1000).toFixed(2)} km, ` +
+        `${Math.round(route.greenFraction * 100)}% on parks & connectors.`
+    );
   } catch (error) {
-    setStatus(error instanceof NoRouteError ? error.message : `${error.message}`, true);
+    endProgress("error", error instanceof NoRouteError ? error.message : `${error.message}`);
     $("result").style.display = "none";
   }
-}
-
-function setStatus(message, isError) {
-  $("status").textContent = message;
-  $("status").className = isError ? "error" : "";
 }
 
 function showResult(start, route) {
@@ -210,7 +284,7 @@ function showResult(start, route) {
 
 // ---- Deep links -------------------------------------------------------------
 // e.g. /?lat=1.3521&lng=103.8198&distance=5 or /?address=560406&distance=6
-// (address deep links auto-resolve to the top OneMap match — no one is around to pick)
+// (deep links auto-plan: the link already encodes the intent to run)
 
 const params = new URLSearchParams(location.search);
 if (params.has("distance")) $("distance").value = params.get("distance");
@@ -220,11 +294,12 @@ if (params.has("lat") && params.has("lng")) {
 } else if (params.has("address")) {
   const query = params.get("address");
   input.value = query;
+  showStatus(`Finding “${query}”…`);
   geocode(query)
     .then((top) => {
       coords = { lat: top.lat, lng: top.lng };
       input.value = top.name;
       $("form").requestSubmit();
     })
-    .catch((error) => setStatus(error.message, true));
+    .catch((error) => showStatus(error.message, "error"));
 }

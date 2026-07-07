@@ -23,8 +23,25 @@
            cursor: pointer; background: #e4ede4; }
   button.primary { background: var(--green); color: #fff; font-weight: 600; }
   button:disabled { opacity: 0.6; cursor: wait; }
-  #status { margin: 0.8rem 0; font-size: 0.9rem; min-height: 1.2em; }
-  #status.error { color: #b3261e; }
+  #status-card { margin: 0.9rem 0; padding: 0.85rem 1.1rem; background: #fff;
+                 border: 1px solid #bcd6bc; border-left: 6px solid var(--green);
+                 border-radius: 10px; box-shadow: 0 2px 12px rgba(46, 125, 50, 0.14); }
+  #status-card.error { border-left-color: #b3261e; box-shadow: 0 2px 12px rgba(179, 38, 30, 0.12); }
+  #status-card.error #status-text { color: #b3261e; }
+  #status-card.done { border-left-color: #2e7d32; background: #f0f7f0; }
+  .status-top { display: flex; justify-content: space-between; align-items: baseline;
+                gap: 1rem; font-size: 0.95rem; font-weight: 600; }
+  #status-time { font-variant-numeric: tabular-nums; color: var(--green-dark);
+                 white-space: nowrap; font-size: 0.9rem; }
+  .bar { height: 10px; margin-top: 0.6rem; background: #e4ede4; border-radius: 999px;
+         overflow: hidden; }
+  #bar-fill { height: 100%; width: 0%; border-radius: 999px; transition: width 0.25s linear;
+              background: linear-gradient(90deg, #43a047, #9ccc65, #43a047);
+              background-size: 200% 100%; animation: shimmer 1.3s linear infinite; }
+  #status-card.overrun #bar-fill { background: linear-gradient(90deg, #ef6c00, #ffb74d, #ef6c00);
+                                   background-size: 200% 100%; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { #bar-fill { animation: none; } }
   #result { display: none; }
   .stats { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.4rem 0 0.8rem; }
   .stats div { background: #fff; border: 1px solid #d7e2d7; border-radius: 10px;
@@ -67,7 +84,13 @@
     <button type="button" id="locate">📍 Use my location</button>
     <button type="submit" class="primary" id="plan">Plan my run</button>
   </form>
-  <p id="status"></p>
+  <div id="status-card" aria-live="polite" hidden>
+    <div class="status-top">
+      <span id="status-text"></span>
+      <span id="status-time"></span>
+    </div>
+    <div class="bar" id="bar" hidden><div id="bar-fill"></div></div>
+  </div>
   <section id="result">
     <div class="stats">
       <div><b id="stat-dist">–</b><span>route length</span></div>

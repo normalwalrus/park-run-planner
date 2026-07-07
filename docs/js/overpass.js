@@ -127,9 +127,19 @@ export function buildGraph(elements) {
   return { nodes, adj };
 }
 
-export async function loadGraph(lat, lng, distanceM) {
+function cacheKey(lat, lng, distanceM) {
   const radius = radiusFor(distanceM);
-  const key = `${lat.toFixed(3)},${lng.toFixed(3)},${Math.floor(radius / 500)}`;
+  return `${lat.toFixed(3)},${lng.toFixed(3)},${Math.floor(radius / 500)}`;
+}
+
+// Lets the UI base its time estimate on whether a download is needed.
+export function isGraphCached(lat, lng, distanceM) {
+  return cache.has(cacheKey(lat, lng, distanceM));
+}
+
+export async function loadGraph(lat, lng, distanceM) {
+  const key = cacheKey(lat, lng, distanceM);
+  const radius = radiusFor(distanceM);
   if (cache.has(key)) return cache.get(key);
   const data = await fetchOverpass(lat, lng, radius);
   const graph = buildGraph(data.elements ?? []);
