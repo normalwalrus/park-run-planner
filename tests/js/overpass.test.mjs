@@ -16,6 +16,34 @@ test("point in ring", () => {
   assert.ok(!pointInRing(3, 1, ring));
 });
 
+test("buildGraph drops disconnected fragments", () => {
+  const elements = [
+    {
+      type: "way",
+      nodes: [1, 2, 3],
+      geometry: [
+        { lat: 1.35, lon: 103.8 },
+        { lat: 1.35, lon: 103.801 },
+        { lat: 1.35, lon: 103.802 },
+      ],
+      tags: { highway: "footway" },
+    },
+    {
+      // isolated two-node stub far from the main component
+      type: "way",
+      nodes: [90, 91],
+      geometry: [
+        { lat: 1.36, lon: 103.81 },
+        { lat: 1.36, lon: 103.8101 },
+      ],
+      tags: { highway: "footway" },
+    },
+  ];
+  const graph = buildGraph(elements);
+  assert.deepEqual([...graph.nodes.keys()].sort(), [1, 2, 3]);
+  assert.ok(!graph.adj.has(90));
+});
+
 test("buildGraph wires edges, greenness, and park overlap", () => {
   const elements = [
     {

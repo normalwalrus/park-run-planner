@@ -124,7 +124,33 @@ export function buildGraph(elements) {
     adj.get(edge.v).push({ to: edge.u, ...scored });
   }
 
-  return { nodes, adj };
+  return keepLargestComponent(nodes, adj);
+}
+
+// Keep only the largest connected component, like osmnx does — otherwise the
+// start point can snap onto an isolated path fragment and yield a ~0 km route.
+function keepLargestComponent(nodes, adj) {
+  const seen = new Set();
+  let largest = [];
+  for (const startNode of adj.keys()) {
+    if (seen.has(startNode)) continue;
+    const component = [startNode];
+    seen.add(startNode);
+    for (let i = 0; i < component.length; i++) {
+      for (const edge of adj.get(component[i]) ?? []) {
+        if (!seen.has(edge.to)) {
+          seen.add(edge.to);
+          component.push(edge.to);
+        }
+      }
+    }
+    if (component.length > largest.length) largest = component;
+  }
+  const keep = new Set(largest);
+  return {
+    nodes: new Map([...nodes].filter(([id]) => keep.has(id))),
+    adj: new Map([...adj].filter(([id]) => keep.has(id))),
+  };
 }
 
 function cacheKey(lat, lng, distanceM) {
