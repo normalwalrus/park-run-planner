@@ -1,13 +1,15 @@
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import geocode, maps
 from app.routing import graph, loop
 from app.schemas import PlanRequest, PlanResponse
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+# The server serves the same web app as GitHub Pages (docs/) so the two UIs
+# can never drift apart; the JSON API below is the server-side engine.
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 app = FastAPI(title="api-app")
 
@@ -15,11 +17,6 @@ app = FastAPI(title="api-app")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
 
 
 # Sync endpoint on purpose: osmnx/networkx work is blocking, so FastAPI
@@ -68,3 +65,7 @@ def plan(request: PlanRequest) -> PlanResponse:
         path=route.coords,
         warnings=warnings,
     )
+
+
+# Mounted last so the API routes above take precedence.
+app.mount("/", StaticFiles(directory=DOCS_DIR, html=True), name="app")
