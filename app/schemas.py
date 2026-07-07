@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 
+from app.geocode import in_singapore
+
 
 class PlanRequest(BaseModel):
     lat: float | None = Field(default=None, ge=-90, le=90)
@@ -12,6 +14,8 @@ class PlanRequest(BaseModel):
         has_coords = self.lat is not None and self.lng is not None
         if not has_coords and not self.address:
             raise ValueError("provide either lat/lng or an address")
+        if has_coords and not in_singapore(self.lat, self.lng):
+            raise ValueError("location is outside Singapore; this planner covers Singapore only")
         return self
 
 

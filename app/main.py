@@ -34,6 +34,11 @@ def plan(request: PlanRequest) -> PlanResponse:
             lat, lng = geocode.geocode(request.address)
         except geocode.GeocodeError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not geocode.in_singapore(lat, lng):
+            raise HTTPException(
+                status_code=422,
+                detail="location is outside Singapore; this planner covers Singapore only",
+            )
 
     target_m = request.distance_km * 1000
     try:

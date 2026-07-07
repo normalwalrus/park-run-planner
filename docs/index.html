@@ -35,6 +35,12 @@
             background: var(--green); color: #fff; border-radius: 6px; text-decoration: none;
             font-weight: 600; }
   #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
+  .spot-row { margin: 0.8rem 0 0; font-size: 0.8rem; color: #5b6b5b; display: flex;
+              flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  #spots { display: contents; }
+  button.spot { padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.8rem;
+                background: #e4ede4; color: #1a271a; }
+  button.spot:hover { background: #d3e3d3; }
   ul.warnings { color: #8a6d00; font-size: 0.85rem; }
   footer { margin-top: 1.2rem; font-size: 0.78rem; color: #5b6b5b; }
   footer a { color: var(--green-dark); }
@@ -44,8 +50,9 @@
 <header><h1>🏃 Park Run Planner — routes that stick to park connectors</h1></header>
 <main>
   <form id="form">
-    <label>Address
-      <input id="address" placeholder="e.g. Bishan Park, Singapore">
+    <label>Address (Singapore)
+      <input id="address" list="spot-options" placeholder="e.g. Bishan Park">
+      <datalist id="spot-options"></datalist>
     </label>
     <label>Distance (km)
       <input id="distance" type="number" min="1" max="30" step="0.5" value="5" required>
@@ -53,6 +60,7 @@
     <button type="button" id="locate">📍 Use my location</button>
     <button type="submit" class="primary" id="plan">Plan my run</button>
   </form>
+  <div class="spot-row"><span>Popular spots:</span><span id="spots"></span></div>
   <p id="status"></p>
   <section id="result">
     <div class="stats">
@@ -61,9 +69,9 @@
       <div><b id="stat-type">–</b><span>route shape</span></div>
     </div>
     <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
-    <div id="map"></div>
     <ul class="warnings" id="warnings"></ul>
   </section>
+  <div id="map"></div>
   <footer>
     Runs entirely in your browser — no server, no API keys.
     Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors

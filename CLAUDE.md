@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Park Run Planner — a FastAPI service that plans running loops preferring park connectors (Singapore PCN), parks, and footpaths over roadside running, returned as a Google Maps walking-directions link. Managed with [uv](https://docs.astral.sh/uv/), Python 3.12 (pinned in `.python-version`); all dependencies and tool config live in `pyproject.toml`.
+Park Run Planner — a FastAPI service that plans running loops preferring park connectors (Singapore PCN), parks, and footpaths over roadside running, returned as a Google Maps walking-directions link. **Singapore-only by design**: `SG_BOUNDS` in `app/geocode.py` and `docs/js/geo.js` gates all locations, Nominatim queries are restricted to `countrycodes=sg` + bounded viewbox, and the static app's Leaflet map is locked to the island with a curated popular-spots list (`SPOTS` in `docs/js/app.js`). Managed with [uv](https://docs.astral.sh/uv/), Python 3.12 (pinned in `.python-version`); all dependencies and tool config live in `pyproject.toml`.
 
 ## Commands
 

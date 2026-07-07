@@ -2,7 +2,7 @@
 
 Plan running routes that stick to **park connectors, parks, and footpaths** instead of roadside pavements. Give it where you are (or an address) and how far you want to run, and it returns a loop of roughly that distance plus a **Google Maps walking link** you can follow on your phone.
 
-Built for Singapore's Park Connector Network (PCN), but it works anywhere OpenStreetMap has decent path coverage.
+Built for Singapore: the planner is scoped to Singapore's Park Connector Network (PCN) and parks — the map is locked to the island, addresses are geocoded within Singapore only, locations outside Singapore are rejected, and the app suggests popular running spots (East Coast Park, MacRitchie, Bishan-AMK Park, …) to start from.
 
 **How it's different from Google Maps:** Google's Directions API can't be told to prefer parks. This planner downloads the OpenStreetMap walking network around your start point, re-weights every path segment by "greenness" (park connectors and park paths are cheap, main roads are expensive), searches for a loop of your target distance on that weighted graph, and only then hands the result to Google Maps as a set of waypoints that pin the route onto the green paths.
 
@@ -52,8 +52,8 @@ Request body — either coordinates or an address, plus a distance:
 
 | field | type | notes |
 |---|---|---|
-| `lat`, `lng` | float | start coordinates (e.g. from browser geolocation) |
-| `address` | string | free-text, geocoded via Nominatim (used when no coords) |
+| `lat`, `lng` | float | start coordinates (e.g. from browser geolocation); must be within Singapore |
+| `address` | string | free-text, geocoded via Nominatim restricted to Singapore (used when no coords) |
 | `distance_km` | float | 1–30 |
 
 Response:
@@ -74,7 +74,7 @@ Response:
 - `green_fraction` — share of the route on park connectors, parks, or footpaths (0–1).
 - `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning).
 - `path` — full route geometry (lat, lng), ready to draw on a map.
-- Errors: `404` unknown address, `422` invalid input or no walkable paths, `502` OSM data unavailable.
+- Errors: `404` address not found in Singapore, `422` invalid input / location outside Singapore / no walkable paths, `502` OSM data unavailable.
 
 ### `GET /health`
 

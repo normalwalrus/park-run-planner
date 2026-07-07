@@ -2,6 +2,14 @@
 
 export const METERS_PER_DEG_LAT = 111320;
 
+// Singapore bounding box: [south, west, north, east].
+export const SG_BOUNDS = [1.13, 103.6, 1.47, 104.1];
+
+export function inSingapore(lat, lng) {
+  const [south, west, north, east] = SG_BOUNDS;
+  return lat >= south && lat <= north && lng >= west && lng <= east;
+}
+
 export function haversineM(a, b) {
   const rad = Math.PI / 180;
   const [lat1, lng1] = [a[0] * rad, a[1] * rad];

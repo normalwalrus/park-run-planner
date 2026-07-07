@@ -66,6 +66,20 @@ def test_distance_out_of_range_rejected():
     assert response.status_code == 422
 
 
+def test_coordinates_outside_singapore_rejected():
+    london = {"lat": 51.5074, "lng": -0.1278, "distance_km": 5}
+    response = client.post("/api/routes/plan", json=london)
+    assert response.status_code == 422
+    assert "Singapore" in response.text
+
+
+def test_geocoded_address_outside_singapore_rejected(fake_routing, monkeypatch):
+    monkeypatch.setattr(geocode, "geocode", lambda address: (51.5074, -0.1278))
+    response = client.post("/api/routes/plan", json={"address": "London", "distance_km": 5})
+    assert response.status_code == 422
+    assert "Singapore" in response.json()["detail"]
+
+
 def test_index_serves_page():
     response = client.get("/")
     assert response.status_code == 200
