@@ -41,8 +41,10 @@ def plan(request: PlanRequest) -> PlanResponse:
             )
 
     target_m = request.distance_km * 1000
+    # A one-way route ranges up to the full distance from the start, a loop ~half.
+    graph_distance_m = target_m * 2 if request.route_shape == "straight" else target_m
     try:
-        walk_graph, graph_warnings = graph.load_scored_graph(lat, lng, target_m)
+        walk_graph, graph_warnings = graph.load_scored_graph(lat, lng, graph_distance_m)
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"could not load map data for this area: {exc}"
@@ -50,7 +52,7 @@ def plan(request: PlanRequest) -> PlanResponse:
     warnings += graph_warnings
 
     try:
-        route = loop.plan_route(walk_graph, lat, lng, target_m)
+        route = loop.plan_route(walk_graph, lat, lng, target_m, shape=request.route_shape)
     except loop.NoRouteError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     warnings += route.warnings

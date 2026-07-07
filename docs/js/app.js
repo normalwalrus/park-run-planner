@@ -234,6 +234,10 @@ $("locate").addEventListener("click", () => {
   );
 });
 
+function selectedShape() {
+  return document.querySelector('input[name="shape"]:checked')?.value ?? "loop";
+}
+
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   closeSuggestions();
@@ -253,26 +257,31 @@ $("form").addEventListener("submit", async (event) => {
   if (!inSingapore(coords.lat, coords.lng)) return showStatus(OUTSIDE_SG, "error");
   $("plan").disabled = true;
   try {
-    await plan(coords, distanceKm);
+    await plan(coords, distanceKm, new Set(), false, selectedShape());
   } finally {
     $("plan").disabled = false;
   }
 });
 
-function estimateSeconds(start, distanceKm) {
-  const download = isGraphCached(start.lat, start.lng, distanceKm * 1000) ? 1 : 15;
-  const searchTime = 1 + distanceKm * 0.2; // loop search grows with area
+function estimateSeconds(start, graphDistanceM, distanceKm) {
+  const download = isGraphCached(start.lat, start.lng, graphDistanceM) ? 1 : 15;
+  const searchTime = 1 + distanceKm * 0.2; // route search grows with area
   return download + searchTime;
 }
 
-async function plan(start, distanceKm, avoid = new Set(), alternate = false) {
-  startProgress("Downloading map data for this area…", estimateSeconds(start, distanceKm));
+async function plan(start, distanceKm, avoid = new Set(), alternate = false, shape = "loop") {
+  // A one-way route ranges up to the full distance from the start, a loop ~half.
+  const graphDistanceM = shape === "straight" ? distanceKm * 2000 : distanceKm * 1000;
+  startProgress(
+    "Downloading map data for this area…",
+    estimateSeconds(start, graphDistanceM, distanceKm)
+  );
   try {
-    const graph = await loadGraph(start.lat, start.lng, distanceKm * 1000);
-    setStage(alternate ? "Searching for an alternate loop…" : "Searching for the greenest loop…");
+    const graph = await loadGraph(start.lat, start.lng, graphDistanceM);
+    setStage(alternate ? "Searching for an alternate route…" : "Searching for the greenest route…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
-    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, avoid);
-    lastRun = { start, distanceKm, avoid, pairs: route.pairs };
+    const route = planRoute(graph, start.lat, start.lng, distanceKm * 1000, avoid, shape);
+    lastRun = { start, distanceKm, avoid, pairs: route.pairs, shape };
     showResult(start, route);
     endProgress(
       "done",
@@ -292,7 +301,7 @@ $("alt").addEventListener("click", async () => {
   for (const pair of lastRun.pairs) lastRun.avoid.add(pair);
   $("plan").disabled = $("alt").disabled = true;
   try {
-    await plan(lastRun.start, lastRun.distanceKm, lastRun.avoid, true);
+    await plan(lastRun.start, lastRun.distanceKm, lastRun.avoid, true, lastRun.shape);
   } finally {
     $("plan").disabled = $("alt").disabled = false;
   }
@@ -306,10 +315,15 @@ function showResult(start, route) {
   $("gmaps").href = googleMapsUrl(route.coords);
   $("warnings").innerHTML = route.warnings.map((w) => `<li>${w}</li>`).join("");
   if (routeLayer) routeLayer.remove();
-  routeLayer = L.layerGroup([
+  const layers = [
     L.polyline(route.coords, { color: "#2e7d32", weight: 5, opacity: 0.85 }),
     L.marker([start.lat, start.lng]),
-  ]).addTo(map);
+  ];
+  if (route.routeType === "one_way") {
+    const end = route.coords[route.coords.length - 1];
+    layers.push(L.marker(end, { title: "Finish" }));
+  }
+  routeLayer = L.layerGroup(layers).addTo(map);
   map.fitBounds(L.polyline(route.coords).getBounds(), { padding: [20, 20] });
 }
 
@@ -319,6 +333,9 @@ function showResult(start, route) {
 
 const params = new URLSearchParams(location.search);
 if (params.has("distance")) $("distance").value = params.get("distance");
+if (params.get("shape") === "straight") {
+  document.querySelector('input[name="shape"][value="straight"]').checked = true;
+}
 if (params.has("lat") && params.has("lng")) {
   coords = { lat: parseFloat(params.get("lat")), lng: parseFloat(params.get("lng")) };
   $("form").requestSubmit();

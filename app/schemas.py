@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from app.geocode import in_singapore
@@ -8,6 +10,7 @@ class PlanRequest(BaseModel):
     lng: float | None = Field(default=None, ge=-180, le=180)
     address: str | None = None
     distance_km: float = Field(ge=1, le=30)
+    route_shape: Literal["loop", "straight"] = "loop"
 
     @model_validator(mode="after")
     def check_location(self) -> "PlanRequest":

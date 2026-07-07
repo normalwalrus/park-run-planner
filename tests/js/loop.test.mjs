@@ -98,6 +98,22 @@ function gridGraph(spacingM = 150, n = 5) {
   return graph;
 }
 
+test("straight shape gives a one-way route of the full distance", () => {
+  const graph = lineGraph(); // 2 km straight path, nodes every 100 m
+  const route = planRoute(graph, ...CENTER, 1500, null, "straight");
+  assert.equal(route.routeType, "one_way");
+  assert.ok(Math.abs(route.lengthM - 1500) < 1e-6);
+  assert.notDeepEqual(route.coords[0], route.coords[route.coords.length - 1]);
+  assert.equal(route.warnings.length, 0);
+});
+
+test("straight shape warns when the network is too small for the distance", () => {
+  const route = planRoute(lineGraph(), ...CENTER, 10000, null, "straight");
+  assert.equal(route.routeType, "one_way");
+  assert.ok(route.lengthM <= 2000);
+  assert.ok(route.warnings[0].includes("closest straight route"));
+});
+
 test("avoiding a route's edges yields a different alternate route", () => {
   const graph = gridGraph();
   const first = planRoute(graph, ...CENTER, 1800);

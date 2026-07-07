@@ -114,6 +114,22 @@ def grid_graph(spacing_m: float = 150, n: int = 5) -> nx.MultiDiGraph:
     return graph
 
 
+def test_straight_shape_gives_one_way_route():
+    graph = line_graph()  # 2 km straight path, nodes every 100 m
+    route = loop.plan_route(graph, *CENTER, 1500.0, shape="straight")
+    assert route.route_type == "one_way"
+    assert route.length_m == pytest.approx(1500.0)
+    assert route.coords[0] != route.coords[-1]
+    assert not route.warnings
+
+
+def test_straight_shape_warns_when_network_too_small():
+    route = loop.plan_route(line_graph(), *CENTER, 10000.0, shape="straight")
+    assert route.route_type == "one_way"
+    assert route.length_m <= 2000
+    assert "closest straight route" in route.warnings[0]
+
+
 def test_avoid_yields_a_different_alternate_route():
     graph = grid_graph()
     first = loop.plan_route(graph, *CENTER, 1800.0)

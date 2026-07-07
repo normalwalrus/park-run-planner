@@ -156,12 +156,12 @@ def _find_loop(graph, start, target_m, ids, lats, lngs, avoid) -> RouteResult | 
     return None
 
 
-def _find_out_and_back(
-    graph: nx.MultiDiGraph, start, target_m: float, avoid: set[frozenset] | None = None
-) -> RouteResult:
+def _greenest_path_tree(graph: nx.MultiDiGraph, start, avoid: set[frozenset] | None):
+    """Greenest-path tree from start: (paths, true length, green length) per node.
+
+    Lengths are accumulated in increasing weighted distance so parents come first.
+    """
     dist_w, paths = nx.single_source_dijkstra(graph, start, weight=_weight_fn(set(), avoid))
-    # Accumulate true length and green length along the shortest-path tree,
-    # visiting nodes in increasing weighted distance so parents come first.
     length_to = {start: 0.0}
     green_to = {start: 0.0}
     for node in sorted(dist_w, key=dist_w.get):
@@ -172,21 +172,30 @@ def _find_out_and_back(
         edge_len = data.get("length", 1.0)
         length_to[node] = length_to[pred] + edge_len
         green_to[node] = green_to[pred] + (edge_len if data.get("green") else 0.0)
+    return paths, length_to, green_to
 
-    half = target_m / 2
+
+def _best_tree_node(start, length_to: dict, green_to: dict, target_len: float):
+    """Node whose tree path best combines greenness with closeness to target_len."""
     best = None
     for node, length in length_to.items():
         if node == start or length == 0:
             continue
-        deviation = abs(length - half) / half
+        deviation = abs(length - target_len) / target_len
         green_fraction = green_to[node] / length
         score = green_fraction - 2 * deviation
         if best is None or score > best[0]:
-            best = (score, node, length, green_fraction)
+            best = (score, node, length, deviation, green_fraction)
     if best is None:
         raise NoRouteError("no reachable route from the start point")
+    return best
 
-    _, node, length, green_fraction = best
+
+def _find_out_and_back(
+    graph: nx.MultiDiGraph, start, target_m: float, avoid: set[frozenset] | None = None
+) -> RouteResult:
+    paths, length_to, green_to = _greenest_path_tree(graph, start, avoid)
+    _, node, length, _, green_fraction = _best_tree_node(start, length_to, green_to, target_m / 2)
     out = paths[node]
     path = out + out[-2::-1]
     coords = [(graph.nodes[n]["y"], graph.nodes[n]["x"]) for n in path]
@@ -200,15 +209,37 @@ def _find_out_and_back(
     )
 
 
+def _find_one_way(
+    graph: nx.MultiDiGraph, start, target_m: float, avoid: set[frozenset] | None = None
+) -> RouteResult:
+    """One-way "straight path": the full target distance ending away from the start."""
+    paths, length_to, green_to = _greenest_path_tree(graph, start, avoid)
+    _, node, length, deviation, green_fraction = _best_tree_node(
+        start, length_to, green_to, target_m
+    )
+    path = paths[node]
+    coords = [(graph.nodes[n]["y"], graph.nodes[n]["x"]) for n in path]
+    warnings = []
+    if deviation > LENGTH_TOLERANCE:
+        warnings.append(
+            f"closest straight route is {length / 1000:.1f} km "
+            f"({deviation:.0%} off the requested distance)"
+        )
+    return RouteResult(coords, length, green_fraction, "one_way", warnings, _edge_pairs(path))
+
+
 def plan_route(
     graph: nx.MultiDiGraph,
     lat: float,
     lng: float,
     target_m: float,
     avoid: set[frozenset] | None = None,
+    shape: str = "loop",
 ) -> RouteResult:
-    """Best-effort loop of ~target_m meters starting and ending near (lat, lng).
+    """Best-effort route of ~target_m meters starting near (lat, lng).
 
+    shape: "loop" (start = end; falls back to out-and-back) or "straight"
+    (one-way, ends away from the start).
     avoid: edge pairs of previously returned routes (RouteResult.pairs) to steer
     away from, so a re-plan yields a genuinely different "alternate route".
     """
@@ -216,6 +247,8 @@ def plan_route(
         raise NoRouteError("no walkable paths found around the start point")
     ids, lats, lngs = _node_arrays(graph)
     start = _nearest_node(ids, lats, lngs, lat, lng)
+    if shape == "straight":
+        return _find_one_way(graph, start, target_m, avoid)
     loop = _find_loop(graph, start, target_m, ids, lats, lngs, avoid)
     if loop is not None:
         return loop

@@ -61,6 +61,13 @@
            color: #5b6b5b; cursor: pointer; border-radius: 4px; }
   #clear:hover { color: #1a271a; background: #e4ede4; }
   .suggest input { padding-right: 2.1rem; }
+  .shape-toggle { display: inline-flex; border: 1px solid #c3d2c3; border-radius: 6px;
+                  overflow: hidden; background: #fff; }
+  .shape-toggle label { flex-direction: row; padding: 0.5rem 0.8rem; font-weight: 400;
+                        font-size: 0.9rem; cursor: pointer; }
+  .shape-toggle label:has(input:checked) { background: var(--green); color: #fff;
+                                           font-weight: 600; }
+  .shape-toggle input { position: absolute; opacity: 0; pointer-events: none; }
   #map { height: 420px; border-radius: 10px; border: 1px solid #d7e2d7; }
   .suggest { position: relative; display: block; }
   #suggestions { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 1100;
@@ -91,6 +98,12 @@
     </label>
     <label>Distance (km)
       <input id="distance" type="number" min="1" max="30" step="0.5" value="5" required>
+    </label>
+    <label>Route shape
+      <span class="shape-toggle" role="radiogroup" aria-label="Route shape">
+        <label><input type="radio" name="shape" value="loop" checked>Loop</label>
+        <label><input type="radio" name="shape" value="straight">Straight</label>
+      </span>
     </label>
     <button type="button" id="locate">📍 Use my location</button>
     <button type="submit" class="primary" id="plan">Plan my run</button>

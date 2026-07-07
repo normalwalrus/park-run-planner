@@ -197,10 +197,10 @@ function findLoop(graph, start, targetM, avoid) {
   return null;
 }
 
-function findOutAndBack(graph, start, targetM, avoid) {
+// Greenest-path tree from the start: prev pointers plus true/green length per node,
+// accumulated in increasing weighted distance so parents come first.
+function greenestPathTree(graph, start, avoid) {
   const { dist, prev } = dijkstra(graph, start, null, null, avoid);
-  // Accumulate true length and green length along the shortest-path tree,
-  // visiting nodes in increasing weighted distance so parents come first.
   const order = [...dist.keys()].sort((a, b) => dist.get(a) - dist.get(b));
   const lengthTo = new Map([[start, 0]]);
   const greenTo = new Map([[start, 0]]);
@@ -211,26 +211,54 @@ function findOutAndBack(graph, start, targetM, avoid) {
     lengthTo.set(node, lengthTo.get(pred) + edge.length);
     greenTo.set(node, greenTo.get(pred) + (edge.green ? edge.length : 0));
   }
+  return { prev, lengthTo, greenTo };
+}
 
-  const half = targetM / 2;
+// Node whose tree path best combines greenness with closeness to targetLen.
+function bestTreeNode(tree, start, targetLen) {
   let best = null;
-  for (const [node, length] of lengthTo) {
+  for (const [node, length] of tree.lengthTo) {
     if (node === start || length === 0) continue;
-    const deviation = Math.abs(length - half) / half;
-    const score = greenTo.get(node) / length - 2 * deviation;
-    if (!best || score > best.score) {
-      best = { score, node, length, greenFraction: greenTo.get(node) / length };
-    }
+    const deviation = Math.abs(length - targetLen) / targetLen;
+    const greenFraction = tree.greenTo.get(node) / length;
+    const score = greenFraction - 2 * deviation;
+    if (!best || score > best.score) best = { score, node, length, deviation, greenFraction };
   }
-  if (!best) throw new NoRouteError("no reachable route from the start point");
+  return best;
+}
 
-  const out = [best.node];
-  while (out[out.length - 1] !== start) out.push(prev.get(out[out.length - 1]));
-  out.reverse();
+function treePath(tree, start, node) {
+  const path = [node];
+  while (path[path.length - 1] !== start) path.push(tree.prev.get(path[path.length - 1]));
+  return path.reverse();
+}
+
+function findOutAndBack(graph, start, targetM, avoid) {
+  const tree = greenestPathTree(graph, start, avoid);
+  const best = bestTreeNode(tree, start, targetM / 2);
+  if (!best) throw new NoRouteError("no reachable route from the start point");
+  const out = treePath(tree, start, best.node);
   const path = [...out, ...out.slice(0, -1).reverse()];
   return toResult(graph, path, best.length * 2, best.greenFraction, "out_and_back", [
     "no loop matched the requested distance; returning an out-and-back route",
   ]);
+}
+
+// One-way "straight path": the full target distance in one direction along the
+// greenest paths, ending away from the start.
+function findOneWay(graph, start, targetM, avoid) {
+  const tree = greenestPathTree(graph, start, avoid);
+  const best = bestTreeNode(tree, start, targetM);
+  if (!best) throw new NoRouteError("no reachable route from the start point");
+  const warnings = [];
+  if (best.deviation > LENGTH_TOLERANCE) {
+    warnings.push(
+      `closest straight route is ${(best.length / 1000).toFixed(1)} km ` +
+        `(${Math.round(best.deviation * 100)}% off the requested distance)`
+    );
+  }
+  return toResult(graph, treePath(tree, start, best.node), best.length, best.greenFraction,
+    "one_way", warnings);
 }
 
 function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
@@ -243,10 +271,12 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
 
 // avoid: Set of edge pair-keys (from previous results' `pairs`) to steer away
 // from, so "Alternate route" produces a genuinely different loop.
-export function planRoute(graph, lat, lng, targetM, avoid = null) {
+// shape: "loop" (default) or "straight" (one-way, ends away from the start).
+export function planRoute(graph, lat, lng, targetM, avoid = null, shape = "loop") {
   if (graph.nodes.size < 2) {
     throw new NoRouteError("no walkable paths found around the start point");
   }
   const start = nearestNode(graph, lat, lng);
+  if (shape === "straight") return findOneWay(graph, start, targetM, avoid);
   return findLoop(graph, start, targetM, avoid) ?? findOutAndBack(graph, start, targetM, avoid);
 }

@@ -34,7 +34,7 @@ Open **http://127.0.0.1:8000/** — allow location access (or type an address), 
 
 > The first request for a new area downloads OSM data and can take ~20–30 s. Repeat requests for the same area are sub-second (disk + memory cache).
 
-You can also deep-link a plan: `http://127.0.0.1:8000/?lat=1.3521&lng=103.8198&distance=5`
+You can also deep-link a plan: `http://127.0.0.1:8000/?lat=1.3521&lng=103.8198&distance=5&shape=straight` (`shape` is `loop` by default). A **Route shape** toggle in the form picks between a loop (start = end) and a straight one-way route that ends away from the start.
 
 ## API
 
@@ -55,6 +55,7 @@ Request body — either coordinates or an address, plus a distance:
 | `lat`, `lng` | float | start coordinates (e.g. from browser geolocation); must be within Singapore |
 | `address` | string | place name, street address, or 6-digit postal code, resolved via OneMap (used when no coords) |
 | `distance_km` | float | 1–30 |
+| `route_shape` | string | `"loop"` (default; start = end) or `"straight"` (one-way, ends away from the start) |
 
 Response:
 
@@ -72,7 +73,7 @@ Response:
 ```
 
 - `green_fraction` — share of the route on park connectors, parks, or footpaths (0–1).
-- `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning).
+- `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning); `"one_way"` for straight routes.
 - `path` — full route geometry (lat, lng), ready to draw on a map.
 - Errors: `404` address not found in Singapore, `422` invalid input / location outside Singapore / no walkable paths, `502` OSM data unavailable.
 
