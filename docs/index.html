@@ -52,14 +52,29 @@
   form { display: flex; flex-wrap: wrap; gap: 0.85rem; align-items: end;
          background: var(--card); border: 1px solid var(--line); border-radius: 14px;
          padding: 1.15rem 1.25rem; box-shadow: var(--card-shadow); }
-  form > label { display: flex; flex-direction: column; gap: 0.35rem;
+  form > label, .advanced-row > label {
+                 display: flex; flex-direction: column; gap: 0.35rem;
                  font-family: "Overpass Mono", monospace; font-size: 0.64rem; font-weight: 600;
                  letter-spacing: 0.13em; text-transform: uppercase; color: var(--moss); }
+
+  /* The four routing preferences fold away so the top of the form stays calm. */
+  details.advanced { flex-basis: 100%; border-top: 1px dashed var(--line);
+                     padding-top: 0.65rem; margin-top: 0.1rem; }
+  details.advanced summary { cursor: pointer; list-style: none; display: inline-block;
+                             font-family: "Overpass Mono", monospace; font-size: 0.64rem;
+                             font-weight: 600; letter-spacing: 0.13em;
+                             text-transform: uppercase; color: var(--moss);
+                             padding: 0.15rem 0.3rem; border-radius: 6px; }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced summary::before { content: "▸ "; color: var(--pcn); }
+  details.advanced[open] summary::before { content: "▾ "; }
+  details.advanced summary:hover { color: var(--sign); background: var(--leaf); }
+  .advanced-row { display: flex; flex-wrap: wrap; gap: 0.85rem; margin-top: 0.8rem; }
   input { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 9px;
           font-size: 0.98rem; font-family: "Overpass", system-ui, sans-serif;
           color: var(--ink); background: #fff; transition: border-color 0.15s; }
   input:focus { outline: 3px solid rgba(47, 125, 70, 0.25); border-color: var(--pcn); }
-  #address { width: 17rem; }
+  #address { width: 15rem; }
   #distance { width: 6.2rem; font-variant-numeric: tabular-nums; }
 
   button { padding: 0.62rem 1.1rem 0.55rem; border: 0; border-radius: 9px; cursor: pointer;
@@ -234,33 +249,38 @@
     <label>Distance (km)
       <input id="distance" type="number" min="1" max="30" step="0.5" value="5" required>
     </label>
-    <label>Route shape
-      <span class="shape-toggle" role="radiogroup" aria-label="Route shape">
-        <label><input type="radio" name="shape" value="loop" checked>Loop</label>
-        <label><input type="radio" name="shape" value="straight">Straight</label>
-      </span>
-    </label>
-    <label>Elevation
-      <span class="shape-toggle" role="radiogroup" aria-label="Elevation preference">
-        <label><input type="radio" name="elev" value="none">None</label>
-        <label><input type="radio" name="elev" value="low" checked>Low</label>
-        <label><input type="radio" name="elev" value="high">High</label>
-      </span>
-    </label>
-    <label>Stay in parks
-      <span class="shape-toggle" role="radiogroup" aria-label="Stay in parks">
-        <label><input type="radio" name="stay" value="no" checked>No</label>
-        <label><input type="radio" name="stay" value="yes">Yes</label>
-      </span>
-    </label>
-    <label>Prioritise sights
-      <span class="shape-toggle" role="radiogroup" aria-label="Prioritise sights">
-        <label><input type="radio" name="sights" value="no" checked>No</label>
-        <label><input type="radio" name="sights" value="yes">Yes</label>
-      </span>
-    </label>
     <button type="button" id="locate">📍 Use my location</button>
     <button type="submit" class="primary" id="plan">Plan my run</button>
+    <details class="advanced" id="advanced">
+      <summary>Advanced options</summary>
+      <div class="advanced-row">
+        <label>Route shape
+          <span class="shape-toggle" role="radiogroup" aria-label="Route shape">
+            <label><input type="radio" name="shape" value="loop" checked>Loop</label>
+            <label><input type="radio" name="shape" value="straight">Straight</label>
+          </span>
+        </label>
+        <label>Elevation
+          <span class="shape-toggle" role="radiogroup" aria-label="Elevation preference">
+            <label><input type="radio" name="elev" value="none">None</label>
+            <label><input type="radio" name="elev" value="low" checked>Low</label>
+            <label><input type="radio" name="elev" value="high">High</label>
+          </span>
+        </label>
+        <label>Stay in parks
+          <span class="shape-toggle" role="radiogroup" aria-label="Stay in parks">
+            <label><input type="radio" name="stay" value="no" checked>No</label>
+            <label><input type="radio" name="stay" value="yes">Yes</label>
+          </span>
+        </label>
+        <label>Prioritise sights
+          <span class="shape-toggle" role="radiogroup" aria-label="Prioritise sights">
+            <label><input type="radio" name="sights" value="no" checked>No</label>
+            <label><input type="radio" name="sights" value="yes">Yes</label>
+          </span>
+        </label>
+      </div>
+    </details>
   </form>
   <div id="status-card" aria-live="polite" hidden>
     <div class="status-top">

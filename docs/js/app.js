@@ -442,6 +442,11 @@ if (params.get("stay") === "yes") {
 if (params.get("sights") === "yes") {
   document.querySelector('input[name="sights"][value="yes"]').checked = true;
 }
+// A deep link that sets any preference opens the advanced section so the
+// non-default settings are visible.
+if (["shape", "elevation", "stay", "sights"].some((k) => params.has(k))) {
+  $("advanced").open = true;
+}
 if (params.has("lat") && params.has("lng")) {
   coords = { lat: parseFloat(params.get("lat")), lng: parseFloat(params.get("lng")) };
   $("form").requestSubmit();
