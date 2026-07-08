@@ -13,6 +13,7 @@ class PlanRequest(BaseModel):
     route_shape: Literal["loop", "straight"] = "loop"
     elevation: Literal["none", "low", "high"] = "low"
     stay_in_park: bool = False  # strongly prefer parks/waterside; warns when streets remain
+    prioritize_sights: bool = False  # bias route choice toward passing notable sights
 
     @model_validator(mode="after")
     def check_location(self) -> "PlanRequest":

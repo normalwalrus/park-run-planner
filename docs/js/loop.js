@@ -273,7 +273,7 @@ function* viaPairs(graph, start, legM, tried) {
   }
 }
 
-function evaluateLoop(graph, start, a, b, targetM, avoid, elev, stay) {
+function evaluateLoop(graph, start, a, b, targetM, avoid, elev, stay, sights) {
   const leg1 = shortestPath(graph, start, a, null, avoid, elev, stay);
   if (!leg1) return null;
   const used = edgePairs(leg1);
@@ -291,11 +291,11 @@ function evaluateLoop(graph, start, a, b, targetM, avoid, elev, stay) {
     greenFraction -
     2 * deviation +
     elevationScore(elev, elevationGains(graph, path)?.total ?? null, length) +
-    sightScore(graph, path);
+    (sights ? sightScore(graph, path) : 0);
   return { score, deviation, path, length, greenFraction };
 }
 
-function findLoop(graph, start, targetM, avoid, elev, stay) {
+function findLoop(graph, start, targetM, avoid, elev, stay, sights) {
   // Green-weighted shortest paths meander well past crow-flies distance, so
   // the right via-point spacing is unknown up front: start at target/3 and,
   // while the resulting loops miss the target, rescale the legs by the
@@ -306,7 +306,7 @@ function findLoop(graph, start, targetM, avoid, elev, stay) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const roundLengths = [];
     for (const [a, b] of viaPairs(graph, start, leg, tried)) {
-      const candidate = evaluateLoop(graph, start, a, b, targetM, avoid, elev, stay);
+      const candidate = evaluateLoop(graph, start, a, b, targetM, avoid, elev, stay, sights);
       if (!candidate) continue;
       candidates.push(candidate);
       roundLengths.push(candidate.length);
@@ -360,7 +360,7 @@ function greenestPathTree(graph, start, avoid, elev, stay) {
 // State whose tree path best combines greenness with closeness to targetLen.
 // The sight bonus needs the actual tree path, so only the TREE_RERANK_TOP
 // base-scored candidates pay for a path walk before the final pick.
-function bestTreeState(graph, tree, start, targetLen, elev) {
+function bestTreeState(graph, tree, start, targetLen, elev, sights) {
   const scored = [];
   for (const [key, length] of tree.lengthTo) {
     const node = tree.stateNode.get(key);
@@ -371,6 +371,7 @@ function bestTreeState(graph, tree, start, targetLen, elev) {
       greenFraction - 2 * deviation + elevationScore(elev, tree.gainTo.get(key), length);
     scored.push({ score, key, length, deviation, greenFraction });
   }
+  if (!sights) return scored.reduce((a, b) => (b && (!a || b.score > a.score) ? b : a), null);
   scored.sort((a, b) => b.score - a.score);
   let best = null;
   for (const candidate of scored.slice(0, TREE_RERANK_TOP)) {
@@ -381,9 +382,9 @@ function bestTreeState(graph, tree, start, targetLen, elev) {
   return best;
 }
 
-function findOutAndBack(graph, start, targetM, avoid, elev, stay) {
+function findOutAndBack(graph, start, targetM, avoid, elev, stay, sights) {
   const tree = greenestPathTree(graph, start, avoid, elev, stay);
-  const best = bestTreeState(graph, tree, start, targetM / 2, elev);
+  const best = bestTreeState(graph, tree, start, targetM / 2, elev, sights);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const out = statePath(tree.prevState, tree.stateNode, best.key);
   const path = [...out, ...out.slice(0, -1).reverse()];
@@ -394,9 +395,9 @@ function findOutAndBack(graph, start, targetM, avoid, elev, stay) {
 
 // One-way "straight path": the full target distance in one direction along the
 // greenest paths, ending away from the start.
-function findOneWay(graph, start, targetM, avoid, elev, stay) {
+function findOneWay(graph, start, targetM, avoid, elev, stay, sights) {
   const tree = greenestPathTree(graph, start, avoid, elev, stay);
-  const best = bestTreeState(graph, tree, start, targetM, elev);
+  const best = bestTreeState(graph, tree, start, targetM, elev, sights);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const warnings = [];
   if (best.deviation > LENGTH_TOLERANCE) {
@@ -492,7 +493,8 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
 // from, so "Alternate route" produces a genuinely different loop.
 // elev: "none" (flattest) | "low" (default, gentle rises ok) | "high" (seek climbs).
 export function planRoute(
-  graph, lat, lng, targetM, avoid = null, shape = "loop", elev = "low", stay = false
+  graph, lat, lng, targetM, avoid = null, shape = "loop", elev = "low", stay = false,
+  sights = false
 ) {
   if (graph.nodes.size < 2) {
     throw new NoRouteError("no walkable paths found around the start point");
@@ -500,9 +502,9 @@ export function planRoute(
   const start = nearestNode(graph, lat, lng);
   const route =
     shape === "straight"
-      ? findOneWay(graph, start, targetM, avoid, elev, stay)
-      : findLoop(graph, start, targetM, avoid, elev, stay) ??
-        findOutAndBack(graph, start, targetM, avoid, elev, stay);
+      ? findOneWay(graph, start, targetM, avoid, elev, stay, sights)
+      : findLoop(graph, start, targetM, avoid, elev, stay, sights) ??
+        findOutAndBack(graph, start, targetM, avoid, elev, stay, sights);
   if (stay && route.greenFraction < STAY_GREEN_TARGET) {
     route.warnings.push(
       "stayed in parks and along water where possible — " +

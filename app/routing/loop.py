@@ -323,7 +323,7 @@ def _via_pairs(graph, start, leg_m, ids, lats, lngs, tried: set[tuple]):
         yield a, b
 
 
-def _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay) -> tuple | None:
+def _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay, sights) -> tuple | None:
     leg1 = _shortest_path(graph, start, a, avoid=avoid, elev=elev, stay=stay)
     if leg1 is None:
         return None
@@ -346,7 +346,7 @@ def _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay) -> tuple | N
         green_fraction
         - 2 * deviation
         + _elevation_score(elev, None if gains is None else gains[0], length)
-        + _sight_score(graph, path)
+        + (_sight_score(graph, path) if sights else 0.0)
     )
     return (score, deviation, path, length, green_fraction)
 
@@ -431,7 +431,9 @@ def _to_result(graph, path, length, green_fraction, route_type, warnings) -> Rou
     )
 
 
-def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay) -> RouteResult | None:
+def _find_loop(
+    graph, start, target_m, ids, lats, lngs, avoid, elev, stay, sights
+) -> RouteResult | None:
     # Green-weighted shortest paths meander well past crow-flies distance, so
     # the right via-point spacing is unknown up front: start at target/3 and,
     # while the resulting loops miss the target, rescale the legs by the
@@ -442,7 +444,7 @@ def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay) -> Ro
     for _ in range(MAX_ROUNDS):
         round_lengths = []
         for a, b in _via_pairs(graph, start, leg, ids, lats, lngs, tried):
-            candidate = _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay)
+            candidate = _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay, sights)
             if candidate is None:
                 continue
             candidates.append(candidate)
@@ -494,7 +496,9 @@ def _greenest_path_tree(
     return prev_state, length_to, green_to, gain_to
 
 
-def _best_tree_state(graph, prev_state, start, length_to, green_to, gain_to, target_len, elev):
+def _best_tree_state(
+    graph, prev_state, start, length_to, green_to, gain_to, target_len, elev, sights
+):
     """State whose tree path best combines greenness with closeness to target_len.
 
     The sight bonus needs the actual tree path, so only the TREE_RERANK_TOP
@@ -509,6 +513,8 @@ def _best_tree_state(graph, prev_state, start, length_to, green_to, gain_to, tar
         scored.append((score, state, length, deviation, green_fraction))
     if not scored:
         raise NoRouteError("no reachable route from the start point")
+    if not sights:
+        return max(scored, key=lambda c: c[0])
     best = None
     for score, state, length, deviation, green_fraction in heapq.nlargest(
         TREE_RERANK_TOP, scored, key=lambda c: c[0]
@@ -526,10 +532,11 @@ def _find_out_and_back(
     avoid: set[frozenset] | None = None,
     elev: str = "low",
     stay: bool = False,
+    sights: bool = False,
 ) -> RouteResult:
     prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev, stay)
     _, state, length, _, green_fraction = _best_tree_state(
-        graph, prev_state, start, length_to, green_to, gain_to, target_m / 2, elev
+        graph, prev_state, start, length_to, green_to, gain_to, target_m / 2, elev, sights
     )
     out = _state_path(prev_state, state)
     path = out + out[-2::-1]
@@ -550,11 +557,12 @@ def _find_one_way(
     avoid: set[frozenset] | None = None,
     elev: str = "low",
     stay: bool = False,
+    sights: bool = False,
 ) -> RouteResult:
     """One-way "straight path": the full target distance ending away from the start."""
     prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev, stay)
     _, state, length, deviation, green_fraction = _best_tree_state(
-        graph, prev_state, start, length_to, green_to, gain_to, target_m, elev
+        graph, prev_state, start, length_to, green_to, gain_to, target_m, elev, sights
     )
     warnings = []
     if deviation > LENGTH_TOLERANCE:
@@ -576,6 +584,7 @@ def plan_route(
     shape: str = "loop",
     elev: str = "low",
     stay: bool = False,
+    sights: bool = False,
 ) -> RouteResult:
     """Best-effort route of ~target_m meters starting near (lat, lng).
 
@@ -586,17 +595,19 @@ def plan_route(
     elev: "none" (flattest) | "low" (default, gentle rises ok) | "high" (seek climbs).
     stay: strongly prefer staying in parks and along water; warns when the
     result still needs streets to connect the green stretches.
+    sights: bias candidate selection toward passing notable sights (off by
+    default; sights passed are reported either way).
     """
     if graph.number_of_nodes() < 2:
         raise NoRouteError("no walkable paths found around the start point")
     ids, lats, lngs = _node_arrays(graph)
     start = _nearest_node(ids, lats, lngs, lat, lng)
     if shape == "straight":
-        route = _find_one_way(graph, start, target_m, avoid, elev, stay)
+        route = _find_one_way(graph, start, target_m, avoid, elev, stay, sights)
     else:
-        route = _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay)
+        route = _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay, sights)
         if route is None:
-            route = _find_out_and_back(graph, start, target_m, avoid, elev, stay)
+            route = _find_out_and_back(graph, start, target_m, avoid, elev, stay, sights)
     if stay and route.green_fraction < STAY_GREEN_TARGET:
         route.warnings.append(
             f"stayed in parks and along water where possible — "

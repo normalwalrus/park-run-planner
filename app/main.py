@@ -57,6 +57,7 @@ def plan(request: PlanRequest) -> PlanResponse:
             shape=request.route_shape,
             elev=request.elevation,
             stay=request.stay_in_park,
+            sights=request.prioritize_sights,
         )
     except loop.NoRouteError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -259,6 +259,10 @@ function selectedStay() {
   return document.querySelector('input[name="stay"]:checked')?.value === "yes";
 }
 
+function selectedSights() {
+  return document.querySelector('input[name="sights"]:checked')?.value === "yes";
+}
+
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   closeSuggestions();
@@ -282,6 +286,7 @@ $("form").addEventListener("submit", async (event) => {
     shape: selectedShape(),
     elev: selectedElevation(),
     stay: selectedStay(),
+    sights: selectedSights(),
     avoid: new Set(),
     routes: [],
     counter: 0,
@@ -321,7 +326,7 @@ async function runPlan(alternate) {
     if (seq !== planSeq) return;
     const route = planRoute(
       graph, start.lat, start.lng, distanceKm * 1000, session.avoid, shape,
-      session.elev, session.stay
+      session.elev, session.stay, session.sights
     );
     for (const pair of route.pairs) session.avoid.add(pair); // future alternates steer away
     const entry = { id: ++session.counter, route };
@@ -433,6 +438,9 @@ if (["none", "low", "high"].includes(params.get("elevation"))) {
 }
 if (params.get("stay") === "yes") {
   document.querySelector('input[name="stay"][value="yes"]').checked = true;
+}
+if (params.get("sights") === "yes") {
+  document.querySelector('input[name="sights"][value="yes"]').checked = true;
 }
 if (params.has("lat") && params.has("lng")) {
   coords = { lat: parseFloat(params.get("lat")), lng: parseFloat(params.get("lng")) };

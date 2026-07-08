@@ -233,15 +233,16 @@ def sight_fork_graph() -> nx.MultiDiGraph:
     return graph
 
 
-def test_sight_bonus_tips_route_toward_a_sight():
-    # Without sights the on-target 400 m chain wins; a sight on the 404 m
-    # chain outweighs its 1% deviation (+0.05 bonus vs -0.02 score).
-    plain = loop.plan_route(sight_fork_graph(), *CENTER, 400.0, shape="straight")
-    assert plain.length_m == pytest.approx(400.0)
+def test_sight_bonus_tips_route_toward_a_sight_only_when_enabled():
+    # With the preference on, a sight on the 404 m chain outweighs its 1%
+    # deviation (+0.05 bonus vs -0.02 score); off (the default), the on-target
+    # 400 m chain wins even though the sight is there.
     scenic_graph = sight_fork_graph()
     q1 = (scenic_graph.nodes["q1"]["y"], scenic_graph.nodes["q1"]["x"])
     scenic_graph.graph["sights"] = [{"name": "Heritage Tree", "lat": q1[0], "lng": q1[1]}]
-    scenic = loop.plan_route(scenic_graph, *CENTER, 400.0, shape="straight")
+    default = loop.plan_route(scenic_graph, *CENTER, 400.0, shape="straight")
+    assert default.length_m == pytest.approx(400.0)
+    scenic = loop.plan_route(scenic_graph, *CENTER, 400.0, shape="straight", sights=True)
     assert scenic.length_m == pytest.approx(404.0)
     assert [s["name"] for s in scenic.sights] == ["Heritage Tree"]
 

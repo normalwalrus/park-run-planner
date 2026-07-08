@@ -224,15 +224,16 @@ function sightForkGraph() {
   return graph;
 }
 
-test("sight bonus tips the route toward a sight", () => {
-  // Without sights the on-target 400 m chain wins; a sight on the 404 m
-  // chain outweighs its 1% deviation (+0.05 bonus vs -0.02 score).
-  const plain = planRoute(sightForkGraph(), ...CENTER, 400, null, "straight");
-  assert.ok(Math.abs(plain.lengthM - 400) < 1e-6);
+test("sight bonus tips the route toward a sight only when enabled", () => {
+  // With the preference on, a sight on the 404 m chain outweighs its 1%
+  // deviation (+0.05 bonus vs -0.02 score); off (the default), the on-target
+  // 400 m chain wins even though the sight is there.
   const scenicGraph = sightForkGraph();
   const q1 = scenicGraph.nodes.get("q1");
   scenicGraph.sights = [{ name: "Heritage Tree", lat: q1.lat, lng: q1.lng }];
-  const scenic = planRoute(scenicGraph, ...CENTER, 400, null, "straight");
+  const byDefault = planRoute(scenicGraph, ...CENTER, 400, null, "straight");
+  assert.ok(Math.abs(byDefault.lengthM - 400) < 1e-6);
+  const scenic = planRoute(scenicGraph, ...CENTER, 400, null, "straight", "low", false, true);
   assert.ok(Math.abs(scenic.lengthM - 404) < 1e-6);
   assert.deepEqual(scenic.sights.map((s) => s.name), ["Heritage Tree"]);
 });
