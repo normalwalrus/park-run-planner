@@ -122,6 +122,10 @@
   #bar-runner { position: absolute; top: -0.85rem; left: 0; font-size: 1.15rem;
                 transition: left 0.25s linear; }
   .finish-flag { font-size: 0.95rem; }
+  #retry { margin-top: 0.8rem; background: var(--card); color: var(--amber-ink);
+           border: 2px solid var(--amber); }
+  #retry:hover:not(:disabled) { background: #faf1d8; }
+  #retry[hidden] { display: none; }
 
   #result { display: none; }
   .route-tabs { display: none; flex-wrap: wrap; gap: 0.5rem; margin: 0.2rem 0 0.9rem; }
@@ -258,6 +262,7 @@
       </div>
       <span class="finish-flag" aria-hidden="true">🏁</span>
     </div>
+    <button type="button" id="retry" hidden>↻ Retry with the same inputs</button>
   </div>
   <section id="result">
     <div class="route-tabs" id="route-tabs" role="tablist" aria-label="Planned routes"></div>

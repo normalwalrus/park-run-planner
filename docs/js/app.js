@@ -61,6 +61,7 @@ function showStatus(message, kind = "info") {
   $("status-text").textContent = message;
   $("status-time").textContent = "";
   $("bar").hidden = true;
+  $("retry").hidden = true;
 }
 
 function startProgress(message, seconds) {
@@ -68,6 +69,7 @@ function startProgress(message, seconds) {
   card.className = "";
   $("status-text").textContent = message;
   $("bar").hidden = false;
+  $("retry").hidden = true;
   startedAt = performance.now();
   estimateS = seconds;
   stopTicker();
@@ -92,6 +94,8 @@ function tick() {
   const elapsed = elapsedSeconds();
   const overrun = elapsed > estimateS;
   card.classList.toggle("overrun", overrun);
+  // Half again past the estimate usually means a stalled download: offer a retry.
+  $("retry").hidden = elapsed <= estimateS * 1.5;
   setTrailProgress(Math.min((elapsed / estimateS) * 100, 97));
   $("status-time").textContent = overrun
     ? `${elapsed.toFixed(1)} s — taking longer than expected`
@@ -103,6 +107,7 @@ function endProgress(kind, message) {
   stopTicker();
   card.className = kind;
   $("status-text").textContent = message;
+  $("retry").hidden = true;
   if (kind === "done") {
     setTrailProgress(100);
     $("status-time").textContent = `done in ${elapsed.toFixed(1)} s`;
@@ -277,12 +282,7 @@ $("form").addEventListener("submit", async (event) => {
     counter: 0,
     activeId: null,
   };
-  $("plan").disabled = true;
-  try {
-    await runPlan(false);
-  } finally {
-    $("plan").disabled = false;
-  }
+  await runPlan(false);
 });
 
 function estimateSeconds(start, graphDistanceM, distanceKm) {
@@ -291,7 +291,16 @@ function estimateSeconds(start, graphDistanceM, distanceKm) {
   return download + searchTime;
 }
 
+// Each attempt gets a sequence number; the retry button starts a fresh attempt
+// and the superseded one (usually a stalled download) exits without touching
+// the UI or the session when it eventually resolves.
+let planSeq = 0;
+let planAlternate = false;
+
 async function runPlan(alternate) {
+  const seq = ++planSeq;
+  planAlternate = alternate;
+  $("plan").disabled = $("alt").disabled = true;
   const { start, distanceKm, shape } = session;
   // A one-way route ranges up to the full distance from the start, a loop ~half.
   const graphDistanceM = shape === "straight" ? distanceKm * 2000 : distanceKm * 1000;
@@ -301,8 +310,10 @@ async function runPlan(alternate) {
   );
   try {
     const graph = await loadGraph(start.lat, start.lng, graphDistanceM);
+    if (seq !== planSeq) return; // superseded by a retry
     setStage(alternate ? "Searching for an alternate route…" : "Searching for the greenest route…");
     await new Promise((r) => setTimeout(r)); // let the status paint before the search blocks
+    if (seq !== planSeq) return;
     const route = planRoute(
       graph, start.lat, start.lng, distanceKm * 1000, session.avoid, shape, session.elev
     );
@@ -318,10 +329,20 @@ async function runPlan(alternate) {
         `${Math.round(route.greenFraction * 100)}% on parks & connectors.`
     );
   } catch (error) {
+    if (seq !== planSeq) return;
     endProgress("error", error instanceof NoRouteError ? error.message : `${error.message}`);
     $("result").style.display = "none";
+  } finally {
+    if (seq === planSeq) $("plan").disabled = $("alt").disabled = false;
   }
 }
+
+// Restart the current attempt with the same inputs — a fresh download often
+// beats waiting out a stalled one.
+$("retry").addEventListener("click", () => {
+  if (!session) return;
+  runPlan(planAlternate);
+});
 
 // Cached-route tabs: click to re-view a recent route without re-planning.
 function renderRouteTabs() {
@@ -354,14 +375,9 @@ $("route-tabs").addEventListener("click", (event) => {
 });
 
 // Re-plan with the same start and distance, steering away from routes already shown.
-$("alt").addEventListener("click", async () => {
+$("alt").addEventListener("click", () => {
   if (!session) return;
-  $("plan").disabled = $("alt").disabled = true;
-  try {
-    await runPlan(true);
-  } finally {
-    $("plan").disabled = $("alt").disabled = false;
-  }
+  runPlan(true);
 });
 
 function showResult(start, route) {
