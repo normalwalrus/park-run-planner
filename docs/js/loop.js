@@ -280,7 +280,9 @@ function evaluateLoop(graph, start, a, b, targetM, avoid, elev) {
   const deviation = Math.abs(length - targetM) / targetM;
   const greenFraction = green / length;
   const score =
-    greenFraction - 2 * deviation + elevationScore(elev, elevationGain(graph, path), length);
+    greenFraction -
+    2 * deviation +
+    elevationScore(elev, elevationGains(graph, path)?.total ?? null, length);
   return { score, deviation, path, length, greenFraction };
 }
 
@@ -389,25 +391,31 @@ function findOneWay(graph, start, targetM, avoid, elev) {
   return toResult(graph, path, best.length, best.greenFraction, "one_way", warnings);
 }
 
-// Total ascent in meters along the path (null when elevation data is missing).
-// A 2 m hysteresis deadband keeps DEM noise between close nodes from
-// accumulating into fake climb.
+// { total, maxClimb } ascent in meters along the path (null when elevation
+// data is missing). Total ascent drives candidate scoring; the largest single
+// climb is what results report. A drop of at least the deadband ends a climb;
+// smaller wobbles are hysteresis-filtered DEM noise.
 const GAIN_DEADBAND_M = 2;
-function elevationGain(graph, path) {
+function elevationGains(graph, path) {
   if (!graph.elev) return null;
-  let gain = 0;
+  let total = 0;
+  let climb = 0;
+  let maxClimb = 0;
   let anchor = graph.elev.get(path[0]) ?? 0;
   for (let i = 1; i < path.length; i++) {
     const elev = graph.elev.get(path[i]) ?? 0;
     const delta = elev - anchor;
     if (delta >= GAIN_DEADBAND_M) {
-      gain += delta;
+      total += delta;
+      climb += delta;
+      maxClimb = Math.max(maxClimb, climb);
       anchor = elev;
     } else if (delta <= -GAIN_DEADBAND_M) {
+      climb = 0;
       anchor = elev;
     }
   }
-  return gain;
+  return { total, maxClimb };
 }
 
 function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
@@ -423,7 +431,7 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     warnings,
     pairs: [...edgePairs(path)],
     roadsCrossed: countRoadCrossings(graph, path),
-    elevationGain: elevationGain(graph, path),
+    elevationGain: elevationGains(graph, path)?.maxClimb ?? null,
   };
 }
 

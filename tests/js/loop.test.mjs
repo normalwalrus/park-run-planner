@@ -162,6 +162,15 @@ test("elevation gain is reported, null without data", () => {
   assert.equal(route2.elevationGain, null);
 });
 
+test("elevation gain is the largest single climb, not the total", () => {
+  // Two hills along the line: 12 m then 6 m — report the biggest climb (12),
+  // not the total ascent (18).
+  const graph = lineGraph(100, 5);
+  graph.elev = new Map([[0, 0], [1, 12], [2, 3], [3, 9], [4, 0]]);
+  const route = planRoute(graph, ...CENTER, 400, null, "straight", "low");
+  assert.equal(route.elevationGain, 12);
+});
+
 // Two ways from A to B: a zigzag that is shorter on paper and a straight chain
 // that is slightly longer. Turn penalties must favor the straight one.
 function zigzagGraph() {

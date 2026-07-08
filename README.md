@@ -75,7 +75,7 @@ Response:
 
 - `green_fraction` — share of the route on park connectors, parks, or footpaths (0–1).
 - `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning); `"one_way"` for straight routes.
-- `elevation_gain_m` — total ascent in meters (`null` if elevation data was unavailable).
+- `elevation_gain_m` — largest single climb in meters (`null` if elevation data was unavailable).
 - `path` — full route geometry (lat, lng), ready to draw on a map.
 - Errors: `404` address not found in Singapore, `422` invalid input / location outside Singapore / no walkable paths, `502` OSM data unavailable.
 

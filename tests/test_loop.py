@@ -173,6 +173,17 @@ def test_elevation_gain_reported_and_none_without_data():
     assert route2.elevation_gain_m is None
 
 
+def test_elevation_gain_is_largest_single_climb():
+    # Two hills along the line: 12 m then 6 m — report the biggest climb (12),
+    # not the total ascent (18).
+    graph = line_graph(spacing_m=100, n=5)
+    for node, elevation in enumerate([0.0, 12.0, 3.0, 9.0, 0.0]):
+        graph.nodes[node]["elevation"] = elevation
+    graph.graph["elevation"] = True
+    route = loop.plan_route(graph, *CENTER, 400.0, shape="straight")
+    assert route.elevation_gain_m == pytest.approx(12.0)
+
+
 def zigzag_graph() -> nx.MultiDiGraph:
     """Two ways A->B: a zigzag shorter on paper, and a slightly longer straight chain."""
     graph = nx.MultiDiGraph()

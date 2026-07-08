@@ -96,7 +96,7 @@ class RouteResult:
     warnings: list[str] = field(default_factory=list)
     pairs: set[frozenset] = field(default_factory=set)  # edges used, for avoid on re-plan
     roads_crossed: int = 0
-    elevation_gain_m: float | None = None  # None when elevation data is unavailable
+    elevation_gain_m: float | None = None  # largest single climb; None without elevation data
 
 
 class NoRouteError(Exception):
@@ -329,10 +329,11 @@ def _evaluate_loop(graph, start, a, b, target_m, avoid, elev) -> tuple | None:
         return None
     deviation = abs(length - target_m) / target_m
     green_fraction = green / length
+    gains = _elevation_gains(graph, path)
     score = (
         green_fraction
         - 2 * deviation
-        + _elevation_score(elev, _elevation_gain(graph, path), length)
+        + _elevation_score(elev, None if gains is None else gains[0], length)
     )
     return (score, deviation, path, length, green_fraction)
 
@@ -340,28 +341,33 @@ def _evaluate_loop(graph, start, a, b, target_m, avoid, elev) -> tuple | None:
 GAIN_DEADBAND_M = 2.0  # DEM noise between close nodes must not become fake climb
 
 
-def _elevation_gain(graph, path) -> float | None:
-    """Total ascent in meters along the path (None when elevation data is missing).
-
-    A hysteresis deadband keeps DEM noise from accumulating into fake climb.
+def _elevation_gains(graph, path) -> tuple[float, float] | None:
+    """(total ascent, largest single climb) in meters along the path, or None
+    when elevation data is missing. Total ascent drives candidate scoring; the
+    largest climb is what results report. A drop of at least the deadband ends
+    a climb; smaller wobbles are hysteresis-filtered DEM noise.
     """
     if not graph.graph.get("elevation"):
         return None
-    gain = 0.0
+    total = climb = max_climb = 0.0
     anchor = graph.nodes[path[0]].get("elevation", 0.0)
     for node in path[1:]:
         elev = graph.nodes[node].get("elevation", 0.0)
         delta = elev - anchor
         if delta >= GAIN_DEADBAND_M:
-            gain += delta
+            total += delta
+            climb += delta
+            max_climb = max(max_climb, climb)
             anchor = elev
         elif delta <= -GAIN_DEADBAND_M:
+            climb = 0.0
             anchor = elev
-    return gain
+    return total, max_climb
 
 
 def _to_result(graph, path, length, green_fraction, route_type, warnings) -> RouteResult:
     coords = [(graph.nodes[n]["y"], graph.nodes[n]["x"]) for n in path]
+    gains = _elevation_gains(graph, path)
     return RouteResult(
         coords,
         length,
@@ -370,7 +376,7 @@ def _to_result(graph, path, length, green_fraction, route_type, warnings) -> Rou
         warnings,
         _edge_pairs(path),
         _count_road_crossings(graph, path),
-        _elevation_gain(graph, path),
+        None if gains is None else gains[1],
     )
 
 

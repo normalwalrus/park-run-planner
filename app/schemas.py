@@ -30,7 +30,7 @@ class PlanResponse(BaseModel):
     green_fraction: float
     route_type: str
     roads_crossed: int
-    elevation_gain_m: float | None
+    elevation_gain_m: float | None  # largest single climb along the route
     start: tuple[float, float]
     path: list[tuple[float, float]]
     warnings: list[str] = []

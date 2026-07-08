@@ -121,11 +121,14 @@
   .route-tabs button b { color: var(--canopy); font-weight: 600; }
   .route-tabs button.active { background: var(--fern); border-color: var(--fern); color: #fff; }
   .route-tabs button.active b { color: #fff; }
-  .stats { display: flex; gap: 0.9rem; flex-wrap: wrap; margin: 0.4rem 0 1rem; }
-  .stats div { background: #fff; border: 1px solid var(--line); border-radius: 14px;
-               padding: 0.7rem 1.2rem 0.6rem; min-width: 8rem; box-shadow: var(--card-shadow); }
-  .stats b { display: block; font-family: "Barlow Condensed", sans-serif; font-weight: 700;
-             font-size: 2rem; line-height: 1.1; color: var(--canopy);
+  .stats { display: flex; flex-wrap: nowrap; overflow-x: auto; align-items: baseline;
+           gap: 0.6rem; margin: 0.4rem 0 1rem; padding: 0.6rem 1rem; white-space: nowrap;
+           background: #fff; border: 1px solid var(--line); border-radius: 14px;
+           box-shadow: var(--card-shadow); }
+  .stats div { display: flex; align-items: baseline; gap: 0.35rem; }
+  .stats div + div::before { content: "·"; margin-right: 0.25rem; color: var(--line); }
+  .stats b { font-family: "Barlow Condensed", sans-serif; font-weight: 700;
+             font-size: 1.4rem; line-height: 1.1; color: var(--canopy);
              font-variant-numeric: tabular-nums; }
   .stats span { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.09em;
                 text-transform: uppercase; color: var(--bark); }
@@ -218,7 +221,7 @@
       <div><b id="stat-green">–</b><span>on parks &amp; connectors</span></div>
       <div><b id="stat-type">–</b><span>route shape</span></div>
       <div><b id="stat-crossings">–</b><span>roads crossed</span></div>
-      <div><b id="stat-elev">–</b><span>elevation gain</span></div>
+      <div><b id="stat-elev">–</b><span>max climb</span></div>
     </div>
     <div class="actions">
       <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
