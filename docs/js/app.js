@@ -372,12 +372,22 @@ function showResult(start, route) {
   $("stat-crossings").textContent = route.roadsCrossed;
   $("stat-elev").textContent =
     route.elevationGain === null ? "–" : `${Math.round(route.elevationGain)} m`;
+  $("stat-sights").textContent = route.sights.length;
   $("gmaps").href = googleMapsUrl(route.coords);
   $("warnings").innerHTML = route.warnings.map((w) => `<li>${w}</li>`).join("");
   if (routeLayer) routeLayer.remove();
   const layers = [
     L.polyline(route.coords, { color: "#2e7d32", weight: 5, opacity: 0.85 }),
     L.marker([start.lat, start.lng]),
+    ...route.sights.map((s) =>
+      L.circleMarker([s.lat, s.lng], {
+        radius: 6,
+        color: "#0e3b2c",
+        weight: 2.5,
+        fillColor: "#fdfcf7",
+        fillOpacity: 1,
+      }).bindTooltip(s.name)
+    ),
   ];
   if (route.routeType === "one_way") {
     const end = route.coords[route.coords.length - 1];

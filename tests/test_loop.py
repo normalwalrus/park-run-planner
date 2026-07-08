@@ -174,6 +174,47 @@ def test_elevation_gain_reported_and_none_without_data():
     assert route2.elevation_gain_m is None
 
 
+def test_sights_on_route_reported_far_ones_ignored():
+    graph = ring_graph()
+    node0 = (graph.nodes[0]["y"], graph.nodes[0]["x"])  # on the ring
+    graph.graph["sights"] = [
+        {"name": "Lookout", "lat": node0[0], "lng": node0[1]},
+        {"name": "Far Museum", "lat": node0[0] + 0.1, "lng": node0[1]},
+    ]
+    route = loop.plan_route(graph, *CENTER, 3300.0)
+    assert [s["name"] for s in route.sights] == ["Lookout"]
+
+
+def sight_fork_graph() -> nx.MultiDiGraph:
+    """Two green chains from A: east to B1 (400 m, on target) and north to B2
+    (404 m, slightly off target) passing a sight at q1."""
+    graph = nx.MultiDiGraph()
+    _add_node(graph, "A", *CENTER)
+    for node, east in [("p1", 100), ("p2", 200), ("B1", 400)]:
+        _add_node(graph, node, *_offset(*CENTER, 0, east))
+    for node, north in [("q1", 100), ("q2", 200), ("B2", 404)]:
+        _add_node(graph, node, *_offset(*CENTER, north, 0))
+    for u, v, length in [("A", "p1", 100), ("p1", "p2", 100), ("p2", "B1", 200)]:
+        _connect(graph, u, v, length, "footway")
+    for u, v, length in [("A", "q1", 100), ("q1", "q2", 100), ("q2", "B2", 204)]:
+        _connect(graph, u, v, length, "footway")
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_sight_bonus_tips_route_toward_a_sight():
+    # Without sights the on-target 400 m chain wins; a sight on the 404 m
+    # chain outweighs its 1% deviation (+0.05 bonus vs -0.02 score).
+    plain = loop.plan_route(sight_fork_graph(), *CENTER, 400.0, shape="straight")
+    assert plain.length_m == pytest.approx(400.0)
+    scenic_graph = sight_fork_graph()
+    q1 = (scenic_graph.nodes["q1"]["y"], scenic_graph.nodes["q1"]["x"])
+    scenic_graph.graph["sights"] = [{"name": "Heritage Tree", "lat": q1[0], "lng": q1[1]}]
+    scenic = loop.plan_route(scenic_graph, *CENTER, 400.0, shape="straight")
+    assert scenic.length_m == pytest.approx(404.0)
+    assert [s["name"] for s in scenic.sights] == ["Heritage Tree"]
+
+
 def test_elevation_gain_is_largest_single_climb():
     # Two hills along the line: 12 m then 6 m — report the biggest climb (12),
     # not the total ascent (18).

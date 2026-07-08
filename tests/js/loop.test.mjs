@@ -163,6 +163,50 @@ test("elevation gain is reported, null without data", () => {
   assert.equal(route2.elevationGain, null);
 });
 
+test("sights on the route are reported, far ones ignored", () => {
+  const graph = ringGraph();
+  const node0 = graph.nodes.get(0); // on the ring
+  graph.sights = [
+    { name: "Lookout", lat: node0.lat, lng: node0.lng },
+    { name: "Far Museum", lat: node0.lat + 0.1, lng: node0.lng },
+  ];
+  const route = planRoute(graph, ...CENTER, 3300);
+  assert.deepEqual(route.sights.map((s) => s.name), ["Lookout"]);
+});
+
+// Two green chains from A: east to B1 (400 m, on target) and north to B2
+// (404 m, slightly off target) passing a sight at q1.
+function sightForkGraph() {
+  const graph = makeGraph();
+  addNode(graph, "A", CENTER);
+  addNode(graph, "p1", offset(...CENTER, 0, 100));
+  addNode(graph, "p2", offset(...CENTER, 0, 200));
+  addNode(graph, "B1", offset(...CENTER, 0, 400));
+  addNode(graph, "q1", offset(...CENTER, 100, 0));
+  addNode(graph, "q2", offset(...CENTER, 200, 0));
+  addNode(graph, "B2", offset(...CENTER, 404, 0));
+  connect(graph, "A", "p1", 100, "footway");
+  connect(graph, "p1", "p2", 100, "footway");
+  connect(graph, "p2", "B1", 200, "footway");
+  connect(graph, "A", "q1", 100, "footway");
+  connect(graph, "q1", "q2", 100, "footway");
+  connect(graph, "q2", "B2", 204, "footway");
+  return graph;
+}
+
+test("sight bonus tips the route toward a sight", () => {
+  // Without sights the on-target 400 m chain wins; a sight on the 404 m
+  // chain outweighs its 1% deviation (+0.05 bonus vs -0.02 score).
+  const plain = planRoute(sightForkGraph(), ...CENTER, 400, null, "straight");
+  assert.ok(Math.abs(plain.lengthM - 400) < 1e-6);
+  const scenicGraph = sightForkGraph();
+  const q1 = scenicGraph.nodes.get("q1");
+  scenicGraph.sights = [{ name: "Heritage Tree", lat: q1.lat, lng: q1.lng }];
+  const scenic = planRoute(scenicGraph, ...CENTER, 400, null, "straight");
+  assert.ok(Math.abs(scenic.lengthM - 404) < 1e-6);
+  assert.deepEqual(scenic.sights.map((s) => s.name), ["Heritage Tree"]);
+});
+
 test("elevation gain is the largest single climb, not the total", () => {
   // Two hills along the line: 12 m then 6 m — report the biggest climb (12),
   // not the total ascent (18).

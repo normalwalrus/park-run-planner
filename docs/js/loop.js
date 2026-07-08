@@ -36,6 +36,14 @@ export const CROSS_PENALTY = [0, 60, 110, 160]; // index = road level
 export const ELEV_PENALTY_PER_M = { none: 10, low: 1.5, high: 0 };
 const HILL_DISCOUNT_MAX = 0.5; // a steep edge costs as little as half its weight
 
+// Notable sights (graph.sights): a gentle candidate-level bias, so a sight
+// tips the balance between comparable routes without stretching distance.
+const SIGHT_RADIUS_M = 60; // a sight this close to a path node counts as passed
+const SIGHT_BONUS = 0.05; // score bump per distinct sight passed
+const SIGHT_BONUS_CAP = 0.25;
+const TREE_RERANK_TOP = 50; // tree candidates re-ranked with the sight bonus
+const M_PER_DEG_LAT = 111320;
+
 // Candidate-level scoring nudge: among route candidates, "none" prefers the
 // flattest and "high" the hilliest, judged by average grade (gain / length).
 function elevationScore(elev, gain, lengthM) {
@@ -274,7 +282,8 @@ function evaluateLoop(graph, start, a, b, targetM, avoid, elev) {
   const score =
     greenFraction -
     2 * deviation +
-    elevationScore(elev, elevationGains(graph, path)?.total ?? null, length);
+    elevationScore(elev, elevationGains(graph, path)?.total ?? null, length) +
+    sightScore(graph, path);
   return { score, deviation, path, length, greenFraction };
 }
 
@@ -341,8 +350,10 @@ function greenestPathTree(graph, start, avoid, elev) {
 }
 
 // State whose tree path best combines greenness with closeness to targetLen.
-function bestTreeState(tree, start, targetLen, elev) {
-  let best = null;
+// The sight bonus needs the actual tree path, so only the TREE_RERANK_TOP
+// base-scored candidates pay for a path walk before the final pick.
+function bestTreeState(graph, tree, start, targetLen, elev) {
+  const scored = [];
   for (const [key, length] of tree.lengthTo) {
     const node = tree.stateNode.get(key);
     if (node === start || length === 0) continue;
@@ -350,14 +361,21 @@ function bestTreeState(tree, start, targetLen, elev) {
     const greenFraction = tree.greenTo.get(key) / length;
     const score =
       greenFraction - 2 * deviation + elevationScore(elev, tree.gainTo.get(key), length);
-    if (!best || score > best.score) best = { score, key, length, deviation, greenFraction };
+    scored.push({ score, key, length, deviation, greenFraction });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  let best = null;
+  for (const candidate of scored.slice(0, TREE_RERANK_TOP)) {
+    const path = statePath(tree.prevState, tree.stateNode, candidate.key);
+    const score = candidate.score + sightScore(graph, path);
+    if (!best || score > best.score) best = { ...candidate, score };
   }
   return best;
 }
 
 function findOutAndBack(graph, start, targetM, avoid, elev) {
   const tree = greenestPathTree(graph, start, avoid, elev);
-  const best = bestTreeState(tree, start, targetM / 2, elev);
+  const best = bestTreeState(graph, tree, start, targetM / 2, elev);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const out = statePath(tree.prevState, tree.stateNode, best.key);
   const path = [...out, ...out.slice(0, -1).reverse()];
@@ -370,7 +388,7 @@ function findOutAndBack(graph, start, targetM, avoid, elev) {
 // greenest paths, ending away from the start.
 function findOneWay(graph, start, targetM, avoid, elev) {
   const tree = greenestPathTree(graph, start, avoid, elev);
-  const best = bestTreeState(tree, start, targetM, elev);
+  const best = bestTreeState(graph, tree, start, targetM, elev);
   if (!best) throw new NoRouteError("no reachable route from the start point");
   const warnings = [];
   if (best.deviation > LENGTH_TOLERANCE) {
@@ -410,6 +428,39 @@ function elevationGains(graph, path) {
   return { total, maxClimb };
 }
 
+// node -> sight index, for nodes within SIGHT_RADIUS_M of a sight. Cached on
+// the graph object; candidate scoring only touches this map.
+function sightNodes(graph) {
+  if (graph._sightNodes) return graph._sightNodes;
+  const map = new Map();
+  for (const [i, sight] of (graph.sights ?? []).entries()) {
+    const scale = Math.cos((sight.lat * Math.PI) / 180);
+    for (const [id, p] of graph.nodes) {
+      if (map.has(id)) continue;
+      const dLat = (p.lat - sight.lat) * M_PER_DEG_LAT;
+      const dLng = (p.lng - sight.lng) * M_PER_DEG_LAT * scale;
+      if (dLat * dLat + dLng * dLng <= SIGHT_RADIUS_M * SIGHT_RADIUS_M) map.set(id, i);
+    }
+  }
+  graph._sightNodes = map;
+  return map;
+}
+
+// Distinct sights passed along the path, in encounter order.
+function pathSights(graph, path) {
+  const nodeSight = sightNodes(graph);
+  const seen = [];
+  for (const node of path) {
+    const i = nodeSight.get(node);
+    if (i !== undefined && !seen.includes(i)) seen.push(i);
+  }
+  return seen.map((i) => graph.sights[i]);
+}
+
+function sightScore(graph, path) {
+  return Math.min(SIGHT_BONUS * pathSights(graph, path).length, SIGHT_BONUS_CAP);
+}
+
 function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
   const coords = path.map((n) => {
     const p = graph.nodes.get(n);
@@ -424,6 +475,7 @@ function toResult(graph, path, lengthM, greenFraction, routeType, warnings) {
     pairs: [...edgePairs(path)],
     roadsCrossed: countRoadCrossings(graph, path),
     elevationGain: elevationGains(graph, path)?.maxClimb ?? null,
+    sights: pathSights(graph, path),
   };
 }
 

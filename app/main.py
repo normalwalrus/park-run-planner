@@ -66,6 +66,7 @@ def plan(request: PlanRequest) -> PlanResponse:
         elevation_gain_m=None
         if route.elevation_gain_m is None
         else round(route.elevation_gain_m, 1),
+        sights=route.sights,
         start=(lat, lng),
         path=route.coords,
         warnings=warnings,

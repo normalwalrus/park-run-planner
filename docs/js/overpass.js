@@ -15,6 +15,8 @@ const WALK_HIGHWAYS =
   "primary|primary_link|trunk|trunk_link";
 const PARK_LEISURE = "park|nature_reserve|garden";
 const PARK_LANDUSE = "recreation_ground|grass";
+// Notable sights: named tourist/historic features; named parks double as sights.
+const SIGHT_TOURISM = "attraction|viewpoint|artwork|museum";
 
 const MIN_RADIUS_M = 1000;
 const MAX_RADIUS_M = 6000;
@@ -34,6 +36,10 @@ function query(lat, lng, radius) {
   way(${around})["highway"~"^(${WALK_HIGHWAYS})$"];
   way(${around})["leisure"~"^(${PARK_LEISURE})$"];
   way(${around})["landuse"~"^(${PARK_LANDUSE})$"];
+  node(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
+  way(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
+  node(${around})["historic"]["name"];
+  way(${around})["historic"]["name"];
 );
 out geom;`;
 }
@@ -63,16 +69,44 @@ function isPark(tags) {
   );
 }
 
-// elements: Overpass ways with `geometry` ([{lat, lon}]) and `nodes` (ids).
+function isSight(tags) {
+  return (
+    Boolean(tags.name) &&
+    (new RegExp(`^(${SIGHT_TOURISM})$`).test(tags.tourism ?? "") ||
+      Boolean(tags.historic) ||
+      new RegExp(`^(${PARK_LEISURE})$`).test(tags.leisure ?? ""))
+  );
+}
+
+function elementCenter(el) {
+  if (el.type === "node") return [el.lat, el.lon];
+  const points = el.geometry ?? [];
+  if (points.length === 0) return null;
+  const lat = points.reduce((s, p) => s + p.lat, 0) / points.length;
+  const lng = points.reduce((s, p) => s + p.lon, 0) / points.length;
+  return [lat, lng];
+}
+
+// elements: Overpass ways with `geometry` ([{lat, lon}]) and `nodes` (ids),
+// plus sight nodes with `lat`/`lon`.
 export function buildGraph(elements) {
   const nodes = new Map();
   const adj = new Map();
   const edges = [];
   const parks = [];
+  const sights = [];
+  const sightNames = new Set();
 
   for (const way of elements) {
-    if (way.type !== "way" || !way.geometry || !way.nodes) continue;
     const tags = way.tags ?? {};
+    if (isSight(tags) && !sightNames.has(tags.name)) {
+      const center = elementCenter(way);
+      if (center) {
+        sightNames.add(tags.name);
+        sights.push({ name: tags.name, lat: center[0], lng: center[1] });
+      }
+    }
+    if (way.type !== "way" || !way.geometry || !way.nodes) continue;
     if (isPark(tags)) {
       const ring = way.geometry.map((p) => [p.lat, p.lon]);
       if (ring.length >= 4) {
@@ -131,7 +165,7 @@ export function buildGraph(elements) {
     adj.get(edge.v).push({ to: edge.u, ...scored });
   }
 
-  return keepLargestComponent(nodes, adj);
+  return { ...keepLargestComponent(nodes, adj), sights };
 }
 
 // Keep only the largest connected component, like osmnx does — otherwise the

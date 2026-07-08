@@ -19,6 +19,10 @@ PARK_TAGS = {
     "leisure": ["park", "nature_reserve", "garden"],
     "landuse": ["recreation_ground", "grass"],
 }
+# Notable sights: named tourist/historic features, plus named parks (below).
+SIGHT_TOURISM = ["attraction", "viewpoint", "artwork", "museum"]
+SIGHT_LEISURE = {"park", "nature_reserve", "garden"}  # named ones double as sights
+FEATURE_TAGS = {**PARK_TAGS, "tourism": SIGHT_TOURISM, "historic": True}
 MIN_RADIUS_M = 1000
 MAX_RADIUS_M = 6000
 
@@ -47,10 +51,44 @@ def _edge_midpoints(graph: nx.MultiDiGraph) -> list[Point]:
     return points
 
 
-def _mark_park_edges(graph: nx.MultiDiGraph, lat: float, lng: float, radius: float) -> None:
-    """Set in_park=True on edges whose midpoint lies inside a park polygon."""
-    features = ox.features_from_point((lat, lng), tags=PARK_TAGS, dist=radius)
-    polygons = [geom for geom in features.geometry if geom.geom_type in ("Polygon", "MultiPolygon")]
+def _is_park(row) -> bool:
+    return (
+        str(row.get("leisure")) in PARK_TAGS["leisure"]
+        or str(row.get("landuse")) in (PARK_TAGS["landuse"])
+    )
+
+
+def _is_sight(row) -> bool:
+    """Named tourist/historic features and named parks count as notable sights."""
+    if not isinstance(row.get("name"), str):
+        return False
+    return (
+        str(row.get("tourism")) in SIGHT_TOURISM
+        or isinstance(row.get("historic"), str)
+        or str(row.get("leisure")) in SIGHT_LEISURE
+    )
+
+
+def _annotate_features(graph: nx.MultiDiGraph, lat: float, lng: float, radius: float) -> None:
+    """Mark edges inside park polygons (in_park=True) and collect notable sights
+    (named tourism/historic features and named parks) as graph.graph["sights"]."""
+    features = ox.features_from_point((lat, lng), tags=FEATURE_TAGS, dist=radius)
+
+    sights: list[dict] = []
+    seen: set[str] = set()
+    for _, row in features.iterrows():
+        if not _is_sight(row) or row["name"] in seen:
+            continue
+        seen.add(row["name"])
+        center = row.geometry.centroid
+        sights.append({"name": row["name"], "lat": center.y, "lng": center.x})
+    graph.graph["sights"] = sights
+
+    polygons = [
+        row.geometry
+        for _, row in features.iterrows()
+        if _is_park(row) and row.geometry.geom_type in ("Polygon", "MultiPolygon")
+    ]
     if not polygons:
         return
     tree = STRtree(polygons)
@@ -74,9 +112,10 @@ def load_scored_graph(
     graph = ox.graph_from_point((lat, lng), dist=radius, network_type="walk", simplify=True)
     warnings: list[str] = []
     try:
-        _mark_park_edges(graph, lat, lng, radius)
+        _annotate_features(graph, lat, lng, radius)
     except Exception:
         warnings.append("park boundary data unavailable; greenness is based on path tags only")
+        graph.graph.setdefault("sights", [])
     if not elevation.annotate_elevation(graph):
         warnings.append("elevation data unavailable; the elevation preference is ignored")
     scoring.score_graph(graph)

@@ -49,6 +49,13 @@ CROSS_PENALTY = (0.0, 60.0, 110.0, 160.0)  # index = road level
 ELEV_PENALTY_PER_M = {"none": 10.0, "low": 1.5, "high": 0.0}
 HILL_DISCOUNT_MAX = 0.5  # a steep edge costs as little as half its weight
 
+# Notable sights (graph.graph["sights"]): a gentle candidate-level bias, so a
+# sight tips the balance between comparable routes without stretching distance.
+SIGHT_RADIUS_M = 60.0  # a sight this close to a path node counts as passed
+SIGHT_BONUS = 0.05  # score bump per distinct sight passed
+SIGHT_BONUS_CAP = 0.25
+TREE_RERANK_TOP = 50  # tree candidates re-ranked with the sight bonus
+
 
 def _elevation_score(elev: str, gain: float | None, length_m: float) -> float:
     """Candidate-level nudge: "none" prefers the flattest candidate, "high" the
@@ -96,6 +103,7 @@ class RouteResult:
     pairs: set[frozenset] = field(default_factory=set)  # edges used, for avoid on re-plan
     roads_crossed: int = 0
     elevation_gain_m: float | None = None  # largest single climb; None without elevation data
+    sights: list[dict] = field(default_factory=list)  # {name, lat, lng} passed en route
 
 
 class NoRouteError(Exception):
@@ -328,6 +336,7 @@ def _evaluate_loop(graph, start, a, b, target_m, avoid, elev) -> tuple | None:
         green_fraction
         - 2 * deviation
         + _elevation_score(elev, None if gains is None else gains[0], length)
+        + _sight_score(graph, path)
     )
     return (score, deviation, path, length, green_fraction)
 
@@ -359,6 +368,43 @@ def _elevation_gains(graph, path) -> tuple[float, float] | None:
     return total, max_climb
 
 
+def _sight_nodes(graph) -> dict:
+    """node -> sight index, for nodes within SIGHT_RADIUS_M of a sight.
+
+    Cached on the graph object; candidate scoring only touches this dict."""
+    cached = graph.graph.get("_sight_nodes")
+    if cached is None:
+        cached = {}
+        sights = graph.graph.get("sights") or []
+        if sights:
+            ids, lats, lngs = _node_arrays(graph)
+            for i, sight in enumerate(sights):
+                scale = math.cos(math.radians(sight["lat"]))
+                d2 = ((lats - sight["lat"]) * METERS_PER_DEG_LAT) ** 2 + (
+                    (lngs - sight["lng"]) * METERS_PER_DEG_LAT * scale
+                ) ** 2
+                for j in np.nonzero(d2 <= SIGHT_RADIUS_M**2)[0]:
+                    cached.setdefault(ids[int(j)], i)
+        graph.graph["_sight_nodes"] = cached
+    return cached
+
+
+def _path_sights(graph, path) -> list[dict]:
+    """Distinct sights passed along the path, in encounter order."""
+    node_sight = _sight_nodes(graph)
+    sights = graph.graph.get("sights") or []
+    seen: list[int] = []
+    for node in path:
+        i = node_sight.get(node)
+        if i is not None and i not in seen:
+            seen.append(i)
+    return [sights[i] for i in seen]
+
+
+def _sight_score(graph, path) -> float:
+    return min(SIGHT_BONUS * len(_path_sights(graph, path)), SIGHT_BONUS_CAP)
+
+
 def _to_result(graph, path, length, green_fraction, route_type, warnings) -> RouteResult:
     coords = [(graph.nodes[n]["y"], graph.nodes[n]["x"]) for n in path]
     gains = _elevation_gains(graph, path)
@@ -371,6 +417,7 @@ def _to_result(graph, path, length, green_fraction, route_type, warnings) -> Rou
         _edge_pairs(path),
         _count_road_crossings(graph, path),
         None if gains is None else gains[1],
+        _path_sights(graph, path),
     )
 
 
@@ -435,19 +482,28 @@ def _greenest_path_tree(graph: nx.MultiDiGraph, start, avoid: set[frozenset] | N
     return prev_state, length_to, green_to, gain_to
 
 
-def _best_tree_state(start, length_to: dict, green_to: dict, gain_to: dict, target_len, elev):
-    """State whose tree path best combines greenness with closeness to target_len."""
-    best = None
+def _best_tree_state(graph, prev_state, start, length_to, green_to, gain_to, target_len, elev):
+    """State whose tree path best combines greenness with closeness to target_len.
+
+    The sight bonus needs the actual tree path, so only the TREE_RERANK_TOP
+    base-scored candidates pay for a path walk before the final pick."""
+    scored = []
     for state, length in length_to.items():
         if state[1] == start or length == 0:
             continue
         deviation = abs(length - target_len) / target_len
         green_fraction = green_to[state] / length
         score = green_fraction - 2 * deviation + _elevation_score(elev, gain_to[state], length)
+        scored.append((score, state, length, deviation, green_fraction))
+    if not scored:
+        raise NoRouteError("no reachable route from the start point")
+    best = None
+    for score, state, length, deviation, green_fraction in heapq.nlargest(
+        TREE_RERANK_TOP, scored, key=lambda c: c[0]
+    ):
+        score += _sight_score(graph, _state_path(prev_state, state))
         if best is None or score > best[0]:
             best = (score, state, length, deviation, green_fraction)
-    if best is None:
-        raise NoRouteError("no reachable route from the start point")
     return best
 
 
@@ -460,7 +516,7 @@ def _find_out_and_back(
 ) -> RouteResult:
     prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev)
     _, state, length, _, green_fraction = _best_tree_state(
-        start, length_to, green_to, gain_to, target_m / 2, elev
+        graph, prev_state, start, length_to, green_to, gain_to, target_m / 2, elev
     )
     out = _state_path(prev_state, state)
     path = out + out[-2::-1]
@@ -484,7 +540,7 @@ def _find_one_way(
     """One-way "straight path": the full target distance ending away from the start."""
     prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev)
     _, state, length, deviation, green_fraction = _best_tree_state(
-        start, length_to, green_to, gain_to, target_m, elev
+        graph, prev_state, start, length_to, green_to, gain_to, target_m, elev
     )
     warnings = []
     if deviation > LENGTH_TOLERANCE:

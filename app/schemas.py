@@ -23,6 +23,12 @@ class PlanRequest(BaseModel):
         return self
 
 
+class Sight(BaseModel):
+    name: str
+    lat: float
+    lng: float
+
+
 class PlanResponse(BaseModel):
     google_maps_url: str
     distance_m: float
@@ -31,6 +37,7 @@ class PlanResponse(BaseModel):
     route_type: str
     roads_crossed: int
     elevation_gain_m: float | None  # largest single climb along the route
+    sights: list[Sight] = []  # notable sights the route passes
     start: tuple[float, float]
     path: list[tuple[float, float]]
     warnings: list[str] = []
