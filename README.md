@@ -77,6 +77,7 @@ Response:
 - `route_type` — `"loop"` normally; `"out_and_back"` when no loop fits the distance (with a warning); `"one_way"` for straight routes.
 - `elevation_gain_m` — largest single climb in meters (`null` if elevation data was unavailable).
 - `sights` — notable sights the route passes within 60 m (`{name, lat, lng}`, in encounter order): named parks plus named OSM tourism/historic features. Routes gently prefer passing them when it costs little extra distance.
+- Request option `stay_in_park` (default `false`) — strongly prefer staying in parks and along water (rivers, canals, reservoirs, the coast count as green): streets cost 4× their usual weight, becoming a last resort. When the route still needs streets to connect the green stretches, a warning says how much of it does.
 - `path` — full route geometry (lat, lng), ready to draw on a map.
 - Errors: `404` address not found in Singapore, `422` invalid input / location outside Singapore / no walkable paths, `502` OSM data unavailable.
 

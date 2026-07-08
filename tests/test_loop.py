@@ -174,6 +174,37 @@ def test_elevation_gain_reported_and_none_without_data():
     assert route2.elevation_gain_m is None
 
 
+def stay_fork_graph() -> nx.MultiDiGraph:
+    """A short direct street A->B vs a green detour three times as long."""
+    graph = nx.MultiDiGraph()
+    _add_node(graph, "A", *CENTER)
+    _add_node(graph, "B", *_offset(*CENTER, 0, 300))
+    _add_node(graph, "d1", *_offset(*CENTER, 60, 100))  # shallow green detour
+    _add_node(graph, "d2", *_offset(*CENTER, 60, 200))
+    _connect(graph, "A", "B", 300, "residential")
+    _connect(graph, "A", "d1", 300, "footway")
+    _connect(graph, "d1", "d2", 300, "footway")
+    _connect(graph, "d2", "B", 300, "footway")
+    scoring.score_graph(graph)
+    return graph
+
+
+def test_stay_prefers_much_longer_green_path():
+    # street 300 (w=300) vs green 900 (w=360): normally the street wins, but
+    # with stay the street costs 300 x 4 = 1200 and the green detour wins.
+    direct = loop._shortest_path(stay_fork_graph(), "A", "B", stay=False)
+    assert direct == ["A", "B"]
+    green = loop._shortest_path(stay_fork_graph(), "A", "B", stay=True)
+    assert green == ["A", "d1", "d2", "B"]
+
+
+def test_stay_warns_when_streets_unavoidable():
+    route = loop.plan_route(line_graph(), *CENTER, 2000.0, shape="straight", stay=True)
+    assert any("where possible" in w for w in route.warnings)
+    without = loop.plan_route(line_graph(), *CENTER, 2000.0, shape="straight", stay=False)
+    assert not any("where possible" in w for w in without.warnings)
+
+
 def test_sights_on_route_reported_far_ones_ignored():
     graph = ring_graph()
     node0 = (graph.nodes[0]["y"], graph.nodes[0]["x"])  # on the ring

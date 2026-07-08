@@ -12,6 +12,7 @@ class PlanRequest(BaseModel):
     distance_km: float = Field(ge=1, le=30)
     route_shape: Literal["loop", "straight"] = "loop"
     elevation: Literal["none", "low", "high"] = "low"
+    stay_in_park: bool = False  # strongly prefer parks/waterside; warns when streets remain
 
     @model_validator(mode="after")
     def check_location(self) -> "PlanRequest":

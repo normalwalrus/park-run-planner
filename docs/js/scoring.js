@@ -45,8 +45,8 @@ export function roadLevel(highway) {
   return ROAD_LEVELS.get(highway) ?? 0;
 }
 
-export function edgeFactor({ highway, name, inPark }) {
-  if (inPark) return GREEN_FACTOR;
+export function edgeFactor({ highway, name, inPark, nearWater }) {
+  if (inPark || nearWater) return GREEN_FACTOR;
   if (name && PCN_NAME.test(name)) return GREEN_FACTOR;
   if (highway && GREEN_HIGHWAYS.has(highway)) return GREEN_FACTOR;
   if (highway && ROAD_HIGHWAYS.has(highway)) return ROAD_FACTOR;

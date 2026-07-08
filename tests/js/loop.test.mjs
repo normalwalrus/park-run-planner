@@ -163,6 +163,36 @@ test("elevation gain is reported, null without data", () => {
   assert.equal(route2.elevationGain, null);
 });
 
+// A short direct street A->B vs a green detour three times as long.
+function stayForkGraph() {
+  const graph = makeGraph();
+  addNode(graph, "A", CENTER);
+  addNode(graph, "B", offset(...CENTER, 0, 300));
+  addNode(graph, "d1", offset(...CENTER, 60, 100)); // shallow green detour
+  addNode(graph, "d2", offset(...CENTER, 60, 200));
+  connect(graph, "A", "B", 300, "residential");
+  connect(graph, "A", "d1", 300, "footway");
+  connect(graph, "d1", "d2", 300, "footway");
+  connect(graph, "d2", "B", 300, "footway");
+  return graph;
+}
+
+test("stay prefers a much longer green path", () => {
+  // street 300 (w=300) vs green 900 (w=360): normally the street wins, but
+  // with stay the street costs 300 x 4 = 1200 and the green detour wins.
+  const direct = shortestPath(stayForkGraph(), "A", "B", null, null, "low", false);
+  assert.deepEqual(direct, ["A", "B"]);
+  const green = shortestPath(stayForkGraph(), "A", "B", null, null, "low", true);
+  assert.deepEqual(green, ["A", "d1", "d2", "B"]);
+});
+
+test("stay warns when streets are unavoidable", () => {
+  const route = planRoute(lineGraph(), ...CENTER, 2000, null, "straight", "low", true);
+  assert.ok(route.warnings.some((w) => w.includes("where possible")));
+  const without = planRoute(lineGraph(), ...CENTER, 2000, null, "straight", "low", false);
+  assert.ok(!without.warnings.some((w) => w.includes("where possible")));
+});
+
 test("sights on the route are reported, far ones ignored", () => {
   const graph = ringGraph();
   const node0 = graph.nodes.get(0); // on the ring

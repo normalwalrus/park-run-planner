@@ -37,7 +37,7 @@ def _as_list(value: object) -> list:
 
 def edge_factor(data: dict) -> float:
     """Greenness multiplier for one edge's OSM attributes."""
-    if data.get("in_park"):
+    if data.get("in_park") or data.get("near_water"):
         return GREEN_FACTOR
     highways = _as_list(data.get("highway"))
     names = _as_list(data.get("name"))

@@ -98,3 +98,34 @@ test("buildGraph wires edges, greenness, and park overlap", () => {
   const inParkStreet = graph.adj.get(4).find((e) => e.to === 5);
   assert.ok(inParkStreet.green); // midpoint 103.0035 lies inside the park polygon
 });
+
+test("edges near a river are marked green, distant ones are not", () => {
+  const elements = [
+    {
+      // river running west-east at lat 1.35
+      type: "way",
+      nodes: [50, 51],
+      geometry: [
+        { lat: 1.35, lon: 103.8 },
+        { lat: 1.35, lon: 103.804 },
+      ],
+      tags: { waterway: "river" },
+    },
+    {
+      // residential chain: first segment ~20 m from the river, then bending far north
+      type: "way",
+      nodes: [1, 2, 3],
+      geometry: [
+        { lat: 1.35018, lon: 103.8 },
+        { lat: 1.35018, lon: 103.802 },
+        { lat: 1.354, lon: 103.802 },
+      ],
+      tags: { highway: "residential" },
+    },
+  ];
+  const graph = buildGraph(elements);
+  const nearEdge = graph.adj.get(1).find((e) => e.to === 2);
+  const farEdge = graph.adj.get(3).find((e) => e.to === 2);
+  assert.equal(nearEdge.green, true); // waterside street counts as green
+  assert.equal(farEdge.green, false);
+});

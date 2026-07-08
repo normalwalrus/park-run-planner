@@ -36,3 +36,7 @@ test("neutral and missing tags", () => {
   assert.equal(edgeFactor({ highway: "residential" }), NEUTRAL_FACTOR);
   assert.equal(edgeFactor({}), NEUTRAL_FACTOR);
 });
+
+test("nearWater flag is green", () => {
+  assert.equal(edgeFactor({ highway: "residential", nearWater: true }), GREEN_FACTOR);
+});

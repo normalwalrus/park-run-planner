@@ -17,6 +17,10 @@ const PARK_LEISURE = "park|nature_reserve|garden";
 const PARK_LANDUSE = "recreation_ground|grass";
 // Notable sights: named tourist/historic features; named parks double as sights.
 const SIGHT_TOURISM = "attraction|viewpoint|artwork|museum";
+// Waterside: rivers, canals, reservoirs, and the coast make green running too.
+const WATER_NATURAL = "water|coastline";
+const WATER_WAYS = "river|canal|stream";
+const WATER_NEAR_M = 40; // an edge this close to water counts as waterside
 
 const MIN_RADIUS_M = 1000;
 const MAX_RADIUS_M = 6000;
@@ -40,6 +44,8 @@ function query(lat, lng, radius) {
   way(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
   node(${around})["historic"]["name"];
   way(${around})["historic"]["name"];
+  way(${around})["natural"~"^(${WATER_NATURAL})$"];
+  way(${around})["waterway"~"^(${WATER_WAYS})$"];
 );
 out geom;`;
 }
@@ -69,6 +75,35 @@ function isPark(tags) {
   );
 }
 
+function isWater(tags) {
+  return (
+    new RegExp(`^(${WATER_NATURAL})$`).test(tags.natural ?? "") ||
+    new RegExp(`^(${WATER_WAYS})$`).test(tags.waterway ?? "")
+  );
+}
+
+// Distance in meters from (lat, lng) to the polyline, equirectangular locally
+// (Singapore sits on the equator, so one scale serves both axes fine).
+const M_PER_DEG = 111320;
+function distToPolylineM(lat, lng, points) {
+  const scale = Math.cos((lat * Math.PI) / 180);
+  let best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const ax = (points[i - 1].lon - lng) * M_PER_DEG * scale;
+    const ay = (points[i - 1].lat - lat) * M_PER_DEG;
+    const bx = (points[i].lon - lng) * M_PER_DEG * scale;
+    const by = (points[i].lat - lat) * M_PER_DEG;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq));
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    best = Math.min(best, px * px + py * py);
+  }
+  return Math.sqrt(best);
+}
+
 function isSight(tags) {
   return (
     Boolean(tags.name) &&
@@ -94,11 +129,27 @@ export function buildGraph(elements) {
   const adj = new Map();
   const edges = [];
   const parks = [];
+  const waters = [];
   const sights = [];
   const sightNames = new Set();
+  const nearDeg = WATER_NEAR_M / M_PER_DEG;
 
   for (const way of elements) {
     const tags = way.tags ?? {};
+    if (way.type === "way" && way.geometry && isWater(tags)) {
+      const points = way.geometry;
+      const lats = points.map((p) => p.lat);
+      const lngs = points.map((p) => p.lon);
+      waters.push({
+        points,
+        bbox: [
+          Math.min(...lats) - nearDeg,
+          Math.min(...lngs) - nearDeg,
+          Math.max(...lats) + nearDeg,
+          Math.max(...lngs) + nearDeg,
+        ],
+      });
+    }
     if (isSight(tags) && !sightNames.has(tags.name)) {
       const center = elementCenter(way);
       if (center) {
@@ -151,7 +202,17 @@ export function buildGraph(elements) {
         lng <= p.bbox[3] &&
         pointInRing(lat, lng, p.ring)
     );
-    const factor = edgeFactor({ highway: edge.highway, name: edge.name, inPark });
+    const nearWater =
+      !inPark &&
+      waters.some(
+        (w) =>
+          lat >= w.bbox[0] &&
+          lng >= w.bbox[1] &&
+          lat <= w.bbox[2] &&
+          lng <= w.bbox[3] &&
+          distToPolylineM(lat, lng, w.points) <= WATER_NEAR_M
+      );
+    const factor = edgeFactor({ highway: edge.highway, name: edge.name, inPark, nearWater });
     const road = roadLevel(edge.highway);
     const scored = {
       length: edge.length,

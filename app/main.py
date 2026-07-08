@@ -50,7 +50,13 @@ def plan(request: PlanRequest) -> PlanResponse:
 
     try:
         route = loop.plan_route(
-            walk_graph, lat, lng, target_m, shape=request.route_shape, elev=request.elevation
+            walk_graph,
+            lat,
+            lng,
+            target_m,
+            shape=request.route_shape,
+            elev=request.elevation,
+            stay=request.stay_in_park,
         )
     except loop.NoRouteError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

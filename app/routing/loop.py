@@ -49,6 +49,13 @@ CROSS_PENALTY = (0.0, 60.0, 110.0, 160.0)  # index = road level
 ELEV_PENALTY_PER_M = {"none": 10.0, "low": 1.5, "high": 0.0}
 HILL_DISCOUNT_MAX = 0.5  # a steep edge costs as little as half its weight
 
+# "Stay in parks": non-green edges cost STAY_PENALTY x their weight, so streets
+# become a last resort (a neutral street then costs 10x a green path per meter).
+# When the result still falls short of STAY_GREEN_TARGET, the route carries a
+# best-effort warning.
+STAY_PENALTY = 4.0
+STAY_GREEN_TARGET = 0.9
+
 # Notable sights (graph.graph["sights"]): a gentle candidate-level bias, so a
 # sight tips the balance between comparable routes without stretching distance.
 SIGHT_RADIUS_M = 60.0  # a sight this close to a path node counts as passed
@@ -202,6 +209,7 @@ def _prepared_adj(graph) -> tuple[dict, dict]:
                         road,
                         gain,
                         gain / length if length > 0 else 0.0,  # grade
+                        bool(data.get("green")),
                     )
                 )
                 if road:
@@ -213,7 +221,7 @@ def _prepared_adj(graph) -> tuple[dict, dict]:
     return cached
 
 
-def _dijkstra(graph, source, used=None, target=None, avoid=None, elev="low"):
+def _dijkstra(graph, source, used=None, target=None, avoid=None, elev="low", stay=False):
     """Turn-aware Dijkstra over (arrived-from, node) states."""
     adj, node_road = _prepared_adj(graph)
     start_state = (None, source)
@@ -236,9 +244,11 @@ def _dijkstra(graph, source, used=None, target=None, avoid=None, elev="low"):
         # Crossing a road at u: we pass through a road-carrying node while both
         # arriving and leaving on non-road paths (walking along a road is free).
         u_road = node_road.get(u, 0)
-        for v, w, exit_bearing, entry_bearing, pair, road, gain, grade in adj[u]:
+        for v, w, exit_bearing, entry_bearing, pair, road, gain, grade, green in adj[u]:
             if v == frm:
                 continue  # no immediate U-turns
+            if stay and not green:
+                w = w * STAY_PENALTY
             if elev == "high":
                 w = w * max(HILL_DISCOUNT_MAX, 1 - grade * 5)
             else:
@@ -268,9 +278,9 @@ def _state_path(prev_state: dict, state) -> list:
     return path[::-1]
 
 
-def _shortest_path(graph, a, b, used=None, avoid=None, elev="low") -> list | None:
+def _shortest_path(graph, a, b, used=None, avoid=None, elev="low", stay=False) -> list | None:
     _, prev_state, _, target_state = _dijkstra(
-        graph, a, used=used, target=b, avoid=avoid, elev=elev
+        graph, a, used=used, target=b, avoid=avoid, elev=elev, stay=stay
     )
     return None if target_state is None else _state_path(prev_state, target_state)
 
@@ -313,16 +323,16 @@ def _via_pairs(graph, start, leg_m, ids, lats, lngs, tried: set[tuple]):
         yield a, b
 
 
-def _evaluate_loop(graph, start, a, b, target_m, avoid, elev) -> tuple | None:
-    leg1 = _shortest_path(graph, start, a, avoid=avoid, elev=elev)
+def _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay) -> tuple | None:
+    leg1 = _shortest_path(graph, start, a, avoid=avoid, elev=elev, stay=stay)
     if leg1 is None:
         return None
     used = _edge_pairs(leg1)
-    leg2 = _shortest_path(graph, a, b, used=used, avoid=avoid, elev=elev)
+    leg2 = _shortest_path(graph, a, b, used=used, avoid=avoid, elev=elev, stay=stay)
     if leg2 is None:
         return None
     used |= _edge_pairs(leg2)
-    leg3 = _shortest_path(graph, b, start, used=used, avoid=avoid, elev=elev)
+    leg3 = _shortest_path(graph, b, start, used=used, avoid=avoid, elev=elev, stay=stay)
     if leg3 is None:
         return None
     path = leg1 + leg2[1:] + leg3[1:]
@@ -421,7 +431,7 @@ def _to_result(graph, path, length, green_fraction, route_type, warnings) -> Rou
     )
 
 
-def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev) -> RouteResult | None:
+def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay) -> RouteResult | None:
     # Green-weighted shortest paths meander well past crow-flies distance, so
     # the right via-point spacing is unknown up front: start at target/3 and,
     # while the resulting loops miss the target, rescale the legs by the
@@ -432,7 +442,7 @@ def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev) -> RouteRes
     for _ in range(MAX_ROUNDS):
         round_lengths = []
         for a, b in _via_pairs(graph, start, leg, ids, lats, lngs, tried):
-            candidate = _evaluate_loop(graph, start, a, b, target_m, avoid, elev)
+            candidate = _evaluate_loop(graph, start, a, b, target_m, avoid, elev, stay)
             if candidate is None:
                 continue
             candidates.append(candidate)
@@ -456,13 +466,15 @@ def _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev) -> RouteRes
     return None
 
 
-def _greenest_path_tree(graph: nx.MultiDiGraph, start, avoid: set[frozenset] | None, elev="low"):
+def _greenest_path_tree(
+    graph: nx.MultiDiGraph, start, avoid: set[frozenset] | None, elev="low", stay=False
+):
     """Greenest-path tree from start over turn-aware states.
 
     Returns (prev_state, length_to, green_to) with per-state true/green lengths,
     accumulated in increasing weighted distance so parents come first.
     """
-    dist, prev_state, settled, _ = _dijkstra(graph, start, avoid=avoid, elev=elev)
+    dist, prev_state, settled, _ = _dijkstra(graph, start, avoid=avoid, elev=elev, stay=stay)
     start_state = (None, start)
     length_to = {start_state: 0.0}
     green_to = {start_state: 0.0}
@@ -513,8 +525,9 @@ def _find_out_and_back(
     target_m: float,
     avoid: set[frozenset] | None = None,
     elev: str = "low",
+    stay: bool = False,
 ) -> RouteResult:
-    prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev)
+    prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev, stay)
     _, state, length, _, green_fraction = _best_tree_state(
         graph, prev_state, start, length_to, green_to, gain_to, target_m / 2, elev
     )
@@ -536,9 +549,10 @@ def _find_one_way(
     target_m: float,
     avoid: set[frozenset] | None = None,
     elev: str = "low",
+    stay: bool = False,
 ) -> RouteResult:
     """One-way "straight path": the full target distance ending away from the start."""
-    prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev)
+    prev_state, length_to, green_to, gain_to = _greenest_path_tree(graph, start, avoid, elev, stay)
     _, state, length, deviation, green_fraction = _best_tree_state(
         graph, prev_state, start, length_to, green_to, gain_to, target_m, elev
     )
@@ -561,6 +575,7 @@ def plan_route(
     avoid: set[frozenset] | None = None,
     shape: str = "loop",
     elev: str = "low",
+    stay: bool = False,
 ) -> RouteResult:
     """Best-effort route of ~target_m meters starting near (lat, lng).
 
@@ -569,14 +584,23 @@ def plan_route(
     avoid: edge pairs of previously returned routes (RouteResult.pairs) to steer
     away from, so a re-plan yields a genuinely different "alternate route".
     elev: "none" (flattest) | "low" (default, gentle rises ok) | "high" (seek climbs).
+    stay: strongly prefer staying in parks and along water; warns when the
+    result still needs streets to connect the green stretches.
     """
     if graph.number_of_nodes() < 2:
         raise NoRouteError("no walkable paths found around the start point")
     ids, lats, lngs = _node_arrays(graph)
     start = _nearest_node(ids, lats, lngs, lat, lng)
     if shape == "straight":
-        return _find_one_way(graph, start, target_m, avoid, elev)
-    loop = _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev)
-    if loop is not None:
-        return loop
-    return _find_out_and_back(graph, start, target_m, avoid, elev)
+        route = _find_one_way(graph, start, target_m, avoid, elev, stay)
+    else:
+        route = _find_loop(graph, start, target_m, ids, lats, lngs, avoid, elev, stay)
+        if route is None:
+            route = _find_out_and_back(graph, start, target_m, avoid, elev, stay)
+    if stay and route.green_fraction < STAY_GREEN_TARGET:
+        route.warnings.append(
+            f"stayed in parks and along water where possible — "
+            f"{round((1 - route.green_fraction) * 100)}% of this route still follows "
+            f"streets to connect the green stretches"
+        )
+    return route

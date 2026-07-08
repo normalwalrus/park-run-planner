@@ -43,3 +43,9 @@ def test_score_graph_annotates_edges():
     road_edge = graph.edges[2, 3, 0]
     assert green_edge["green"] and green_edge["w"] == 100.0 * scoring.GREEN_FACTOR
     assert not road_edge["green"] and road_edge["w"] == 100.0 * scoring.ROAD_FACTOR
+
+
+def test_near_water_flag_is_green():
+    assert scoring.edge_factor({"highway": "residential", "near_water": True}) == (
+        scoring.GREEN_FACTOR
+    )

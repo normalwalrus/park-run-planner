@@ -22,7 +22,17 @@ PARK_TAGS = {
 # Notable sights: named tourist/historic features, plus named parks (below).
 SIGHT_TOURISM = ["attraction", "viewpoint", "artwork", "museum"]
 SIGHT_LEISURE = {"park", "nature_reserve", "garden"}  # named ones double as sights
-FEATURE_TAGS = {**PARK_TAGS, "tourism": SIGHT_TOURISM, "historic": True}
+# Waterside: rivers, canals, reservoirs, and the coast make green running too.
+WATER_NATURAL = {"water", "coastline"}
+WATER_WAYS = {"river", "canal", "stream"}
+WATER_NEAR_M = 40.0  # an edge this close to water counts as waterside
+FEATURE_TAGS = {
+    **PARK_TAGS,
+    "tourism": SIGHT_TOURISM,
+    "historic": True,
+    "natural": sorted(WATER_NATURAL),
+    "waterway": sorted(WATER_WAYS),
+}
 MIN_RADIUS_M = 1000
 MAX_RADIUS_M = 6000
 
@@ -69,6 +79,10 @@ def _is_sight(row) -> bool:
     )
 
 
+def _is_water(row) -> bool:
+    return str(row.get("natural")) in WATER_NATURAL or str(row.get("waterway")) in WATER_WAYS
+
+
 def _annotate_features(graph: nx.MultiDiGraph, lat: float, lng: float, radius: float) -> None:
     """Mark edges inside park polygons (in_park=True) and collect notable sights
     (named tourism/historic features and named parks) as graph.graph["sights"]."""
@@ -84,20 +98,29 @@ def _annotate_features(graph: nx.MultiDiGraph, lat: float, lng: float, radius: f
         sights.append({"name": row["name"], "lat": center.y, "lng": center.x})
     graph.graph["sights"] = sights
 
+    midpoints = _edge_midpoints(graph)
+    edges = list(graph.edges(keys=True))
+
     polygons = [
         row.geometry
         for _, row in features.iterrows()
         if _is_park(row) and row.geometry.geom_type in ("Polygon", "MultiPolygon")
     ]
-    if not polygons:
-        return
-    tree = STRtree(polygons)
-    midpoints = _edge_midpoints(graph)
-    inside_idx, _ = tree.query(midpoints, predicate="intersects")
-    edges = list(graph.edges(keys=True))
-    for i in set(inside_idx):
-        u, v, k = edges[i]
-        graph.edges[u, v, k]["in_park"] = True
+    if polygons:
+        inside_idx, _ = STRtree(polygons).query(midpoints, predicate="intersects")
+        for i in set(inside_idx):
+            u, v, k = edges[i]
+            graph.edges[u, v, k]["in_park"] = True
+
+    waters = [row.geometry for _, row in features.iterrows() if _is_water(row)]
+    if waters:
+        # Geometries are in degrees; Singapore sits on the equator, so one
+        # conversion factor serves both axes.
+        near_deg = WATER_NEAR_M / 111_320.0
+        near_idx, _ = STRtree(waters).query(midpoints, predicate="dwithin", distance=near_deg)
+        for i in set(near_idx):
+            u, v, k = edges[i]
+            graph.edges[u, v, k]["near_water"] = True
 
 
 def load_scored_graph(
