@@ -119,7 +119,7 @@ def test_crossing_penalty_prefers_detour_over_cutting_across_road():
     assert path == ["A", "Y", "B"]
 
 
-def test_roads_crossed_counted_and_deduped():
+def test_every_road_crossing_counted():
     graph = nx.MultiDiGraph()
     for node, east in [("A", 0), ("X1", 100), ("X2", 120), ("X3", 220), ("B", 320)]:
         _add_node(graph, node, *_offset(*CENTER, 0, east))
@@ -127,13 +127,14 @@ def test_roads_crossed_counted_and_deduped():
     _connect(graph, "X1", "X2", 20, "footway")
     _connect(graph, "X2", "X3", 100, "footway")
     _connect(graph, "X3", "B", 100, "footway")
-    # road stubs mark X1/X2 (a dual carriageway pair) and X3 (a separate road)
+    # road stubs mark X1, X2, and X3 as roads cutting across the footway;
+    # X1/X2 are only 20 m apart but each still counts
     for i, x in enumerate(["X1", "X2", "X3"]):
         _add_node(graph, f"s{i}", *_offset(*CENTER, 30, 100 + i * 10))
         _connect(graph, x, f"s{i}", 30, "residential")
     scoring.score_graph(graph)
     route = loop.plan_route(graph, *CENTER, 320.0, shape="straight")
-    assert route.roads_crossed == 2  # X1+X2 merge into one, X3 is the second
+    assert route.roads_crossed == 3
 
 
 def hill_graph() -> nx.MultiDiGraph:

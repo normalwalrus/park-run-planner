@@ -63,7 +63,6 @@ def _elevation_score(elev: str, gain: float | None, length_m: float) -> float:
     return 0.0
 
 
-CROSS_DEDUPE_M = 30.0  # dual carriageways count once in the stat
 # `service` (driveways, car-park aisles) is deliberately excluded — cutting
 # across a driveway is not a road crossing to a runner.
 ROAD_LEVELS = {
@@ -282,20 +281,15 @@ def _path_stats(graph: nx.MultiDiGraph, path: list) -> tuple[float, float]:
 
 def _count_road_crossings(graph: nx.MultiDiGraph, path: list) -> int:
     """Roads crossed along the path: interior nodes carrying a road where the
-    route arrives and leaves on non-road paths. Crossings within CROSS_DEDUPE_M
-    of the previous one count once (dual carriageways read as a single road)."""
+    route arrives and leaves on non-road paths. Every such node counts, however
+    close together — each carriageway of a dual carriageway is its own road."""
     _, node_road = _prepared_adj(graph)
     crossings = 0
-    walked = 0.0
-    last_at = -math.inf
     for t, u, v in zip(path, path[1:], path[2:]):
         in_edge = _best_edge(graph, t, u)
-        walked += in_edge.get("length", 1.0)
         out_edge = _best_edge(graph, u, v)
         if not _road_level(in_edge) and not _road_level(out_edge) and node_road.get(u, 0) > 0:
-            if walked - last_at > CROSS_DEDUPE_M:
-                crossings += 1
-            last_at = walked
+            crossings += 1
     return crossings
 
 

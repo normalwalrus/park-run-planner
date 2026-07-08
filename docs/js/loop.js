@@ -45,8 +45,6 @@ function elevationScore(elev, gain, lengthM) {
   if (elev === "high") return (Math.min(grade, 0.06) / 0.06) * 0.4;
   return 0;
 }
-const CROSS_DEDUPE_M = 30; // dual carriageways count once in the stat
-
 export class NoRouteError extends Error {}
 
 class MinHeap {
@@ -215,20 +213,14 @@ function pathStats(graph, path) {
 }
 
 // Roads crossed along the path: interior nodes carrying a road where the route
-// arrives and leaves on non-road paths. Crossings within CROSS_DEDUPE_M of the
-// previous one count once (dual carriageways read as a single road to a human).
+// arrives and leaves on non-road paths. Every such node counts, however close
+// together — each carriageway of a dual carriageway is its own road.
 function countRoadCrossings(graph, path) {
   let count = 0;
-  let walked = 0;
-  let lastCrossingAt = -Infinity;
   for (let i = 1; i < path.length - 1; i++) {
     const inEdge = bestEdge(graph, path[i - 1], path[i]);
-    walked += inEdge.length;
     const outEdge = bestEdge(graph, path[i], path[i + 1]);
-    if (!inEdge.road && !outEdge.road && nodeRoadLevel(graph, path[i]) > 0) {
-      if (walked - lastCrossingAt > CROSS_DEDUPE_M) count++;
-      lastCrossingAt = walked;
-    }
+    if (!inEdge.road && !outEdge.road && nodeRoadLevel(graph, path[i]) > 0) count++;
   }
   return count;
 }

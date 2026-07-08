@@ -108,7 +108,7 @@ test("crossing penalty prefers a detour over cutting across a road", () => {
   assert.deepEqual(path, ["A", "Y", "B"]);
 });
 
-test("roads crossed are counted, deduped within a dual carriageway", () => {
+test("every road crossing is counted", () => {
   const graph = makeGraph();
   const chain = [
     ["A", 0], ["X1", 100], ["X2", 120], ["X3", 220], ["B", 320],
@@ -118,13 +118,14 @@ test("roads crossed are counted, deduped within a dual carriageway", () => {
   connect(graph, "X1", "X2", 20, "footway");
   connect(graph, "X2", "X3", 100, "footway");
   connect(graph, "X3", "B", 100, "footway");
-  // road stubs mark X1/X2 (a dual carriageway pair) and X3 (a separate road)
+  // road stubs mark X1, X2, and X3 as roads cutting across the footway;
+  // X1/X2 are only 20 m apart but each still counts
   for (const [i, x] of ["X1", "X2", "X3"].entries()) {
     addNode(graph, `s${i}`, offset(...CENTER, 30, 100 + i * 10));
     connect(graph, x, `s${i}`, 30, "residential");
   }
   const route = planRoute(graph, ...CENTER, 320, null, "straight");
-  assert.equal(route.roadsCrossed, 2); // X1+X2 merge into one, X3 is the second
+  assert.equal(route.roadsCrossed, 3);
 });
 
 // Two ways from A to B: a short path over a hill vs a longer flat detour.
