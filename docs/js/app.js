@@ -296,7 +296,9 @@ $("form").addEventListener("submit", async (event) => {
 });
 
 function estimateSeconds(start, graphDistanceM, distanceKm) {
-  const download = isGraphCached(start.lat, start.lng, graphDistanceM) ? 1 : 15;
+  // Cached covers the persistent cache too: no download, but the graph still
+  // gets rebuilt and elevation-annotated.
+  const download = isGraphCached(start.lat, start.lng, graphDistanceM) ? 2 : 15;
   const searchTime = 1 + distanceKm * 0.4; // turn-aware route search grows with area
   return download + searchTime;
 }

@@ -8,7 +8,10 @@ import { edgeFactor, roadLevel, GREEN_FACTOR } from "./scoring.js";
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
 ];
+const FETCH_TIMEOUT_MS = 30_000; // per-endpoint abort — a hung mirror must not stall the plan
+const HEDGE_DELAY_MS = 8_000; // no answer yet? start the next mirror in parallel
 const WALK_HIGHWAYS =
   "footway|path|pedestrian|track|cycleway|bridleway|residential|living_street|" +
   "service|unclassified|tertiary|tertiary_link|secondary|secondary_link|" +
@@ -35,37 +38,75 @@ export function radiusFor(distanceM) {
 
 function query(lat, lng, radius) {
   const around = `around:${Math.round(radius)},${lat},${lng}`;
-  return `[out:json][timeout:60];
+  return `[out:json][timeout:30];
 (
   way(${around})["highway"~"^(${WALK_HIGHWAYS})$"];
   way(${around})["leisure"~"^(${PARK_LEISURE})$"];
   way(${around})["landuse"~"^(${PARK_LANDUSE})$"];
-  node(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
-  way(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
-  node(${around})["historic"]["name"];
-  way(${around})["historic"]["name"];
+  nw(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
+  nw(${around})["historic"]["name"];
   way(${around})["natural"~"^(${WATER_NATURAL})$"];
   way(${around})["waterway"~"^(${WATER_WAYS})$"];
 );
 out geom;`;
 }
 
-async function fetchOverpass(lat, lng, radius) {
-  let lastError;
-  for (const endpoint of ENDPOINTS) {
+// Hedged requests: the public Overpass mirrors regularly hang or overload, so
+// each attempt gets its own timeout, and when an endpoint has not answered
+// within HEDGE_DELAY_MS the next mirror is queried in parallel — the first
+// success wins and the rest are aborted.
+function fetchOverpass(lat, lng, radius) {
+  const body = `data=${encodeURIComponent(query(lat, lng, radius))}`;
+  const controllers = [];
+  let launched = 0;
+  let settled = false;
+
+  const attempt = async (endpoint) => {
+    const controller = new AbortController();
+    controllers.push(controller);
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        body: `data=${encodeURIComponent(query(lat, lng, radius))}`,
+        body,
         headers: { "content-type": "application/x-www-form-urlencoded" },
+        signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`Overpass returned ${response.status}`);
-      return await response.json();
-    } catch (error) {
-      lastError = error;
+      if (!response.ok) throw new Error(`returned ${response.status}`);
+      const data = await response.json();
+      if (!Array.isArray(data.elements)) throw new Error("returned no data");
+      return data;
+    } finally {
+      clearTimeout(timer);
     }
-  }
-  throw new Error(`could not load map data: ${lastError?.message ?? "unknown error"}`);
+  };
+
+  return new Promise((resolve, reject) => {
+    const errors = [];
+    const launchNext = () => {
+      if (settled || launched >= ENDPOINTS.length) return;
+      const endpoint = ENDPOINTS[launched++];
+      attempt(endpoint).then(
+        (data) => {
+          if (settled) return;
+          settled = true;
+          for (const c of controllers) c.abort();
+          resolve(data);
+        },
+        (error) => {
+          errors.push(`${new URL(endpoint).host}: ${error.message}`);
+          if (settled) return;
+          if (launched < ENDPOINTS.length) launchNext();
+          else if (errors.length === ENDPOINTS.length) {
+            settled = true;
+            reject(new Error(`could not load map data (${errors.join("; ")})`));
+          }
+        }
+      );
+      if (launched < ENDPOINTS.length) setTimeout(launchNext, HEDGE_DELAY_MS).unref?.();
+    };
+    launchNext();
+  });
 }
 
 function isPark(tags) {
@@ -255,6 +296,74 @@ function keepLargestComponent(nodes, adj) {
   };
 }
 
+// ---- Persistent payload cache (IndexedDB) -----------------------------------
+// The in-memory cache dies with the page, so before this every reload paid the
+// Overpass download again. Raw elements persist for a week per area, keyed like
+// the memory cache; QUERY_VERSION invalidates entries when query() changes.
+
+const QUERY_VERSION = 2;
+const IDB_NAME = "park-run-planner";
+const IDB_STORE = "overpass";
+const IDB_TTL_MS = 7 * 24 * 3600 * 1000;
+const IDB_MAX = 8;
+const hasIdb = typeof indexedDB !== "undefined";
+const persistedKeys = new Set(); // synchronous view for isGraphCached / estimates
+
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE, { keyPath: "key" });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbRequest(mode, run) {
+  if (!hasIdb) return Promise.resolve(null);
+  return idb()
+    .then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const store = db.transaction(IDB_STORE, mode).objectStore(IDB_STORE);
+          const req = run(store);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        })
+    )
+    .catch(() => null); // cache failures must never break planning
+}
+
+async function idbGetElements(key) {
+  const row = await idbRequest("readonly", (store) => store.get(key));
+  if (!row || row.version !== QUERY_VERSION || Date.now() - row.time > IDB_TTL_MS) return null;
+  return row.elements;
+}
+
+async function idbPutElements(key, elements) {
+  await idbRequest("readwrite", (store) =>
+    store.put({ key, version: QUERY_VERSION, time: Date.now(), elements })
+  );
+  persistedKeys.add(key);
+  const rows = (await idbRequest("readonly", (store) => store.getAll())) ?? [];
+  const stale = rows
+    .filter((r) => r.version !== QUERY_VERSION || Date.now() - r.time > IDB_TTL_MS)
+    .concat(rows.sort((a, b) => a.time - b.time).slice(0, Math.max(0, rows.length - IDB_MAX)));
+  for (const row of stale) {
+    persistedKeys.delete(row.key);
+    await idbRequest("readwrite", (store) => store.delete(row.key));
+  }
+}
+
+if (hasIdb) {
+  idbRequest("readonly", (store) => store.getAll()).then((rows) => {
+    for (const row of rows ?? []) {
+      if (row.version === QUERY_VERSION && Date.now() - row.time <= IDB_TTL_MS) {
+        persistedKeys.add(row.key);
+      }
+    }
+  });
+}
+
 function cacheKey(lat, lng, distanceM) {
   const radius = radiusFor(distanceM);
   return `${lat.toFixed(3)},${lng.toFixed(3)},${Math.floor(radius / 500)}`;
@@ -262,15 +371,21 @@ function cacheKey(lat, lng, distanceM) {
 
 // Lets the UI base its time estimate on whether a download is needed.
 export function isGraphCached(lat, lng, distanceM) {
-  return cache.has(cacheKey(lat, lng, distanceM));
+  const key = cacheKey(lat, lng, distanceM);
+  return cache.has(key) || persistedKeys.has(key);
 }
 
 export async function loadGraph(lat, lng, distanceM) {
   const key = cacheKey(lat, lng, distanceM);
   const radius = radiusFor(distanceM);
   if (cache.has(key)) return cache.get(key);
-  const data = await fetchOverpass(lat, lng, radius);
-  const graph = buildGraph(data.elements ?? []);
+  let elements = await idbGetElements(key);
+  if (!elements) {
+    const data = await fetchOverpass(lat, lng, radius);
+    elements = data.elements ?? [];
+    idbPutElements(key, elements); // fire-and-forget; planning must not wait on it
+  }
+  const graph = buildGraph(elements);
   await annotateElevation(graph); // sets graph.elev; absent = preference ignored
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
   cache.set(key, graph);

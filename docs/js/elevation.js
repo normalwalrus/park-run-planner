@@ -28,7 +28,9 @@ async function fetchTile(tx, ty) {
   if (tileCache.has(key)) return tileCache.get(key);
   let data = null;
   try {
-    const response = await fetch(`${TILE_URL}/${key}.png`);
+    const response = await fetch(`${TILE_URL}/${key}.png`, {
+      signal: AbortSignal.timeout(10_000), // fail-soft: routes work without elevation
+    });
     if (response.ok) {
       const bitmap = await createImageBitmap(await response.blob());
       const canvas = document.createElement("canvas");

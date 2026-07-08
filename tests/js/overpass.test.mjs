@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildGraph, radiusFor } from "../../docs/js/overpass.js";
+import { buildGraph, loadGraph, radiusFor } from "../../docs/js/overpass.js";
 import { pointInRing } from "../../docs/js/geo.js";
 
 test("radius scales with distance and clamps", () => {
@@ -128,4 +128,21 @@ test("edges near a river are marked green, distant ones are not", () => {
   const farEdge = graph.adj.get(3).find((e) => e.to === 2);
   assert.equal(nearEdge.green, true); // waterside street counts as green
   assert.equal(farEdge.green, false);
+});
+
+test("loadGraph fails over to the next mirror when the first errors", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (url) => {
+    calls += 1;
+    if (calls === 1) return Promise.reject(new Error("connection refused"));
+    return Promise.resolve({ ok: true, json: async () => ({ elements: [] }) });
+  };
+  try {
+    const graph = await loadGraph(1.3, 103.8, 1000);
+    assert.ok(graph.nodes instanceof Map);
+    assert.equal(calls, 2); // second mirror answered
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
