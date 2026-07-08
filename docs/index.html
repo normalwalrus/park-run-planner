@@ -5,155 +5,201 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Park Run Planner</title>
 <meta name="description" content="Plan running routes that prioritize park connectors and parks over roadside running.">
+<meta name="theme-color" content="#0e3b2c">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Signage system: NParks-style boards (deep green, white type, amber edge)
+     on a warm paper ground. Overpass is a signage face — and the pun is free. */
   :root {
-    --canopy: #1d3a2a;   /* forest ink */
-    --fern: #2f7d46;     /* action green */
-    --fern-deep: #226237;
-    --leaf: #d9ecc8;     /* soft leaf wash */
-    --mist: #f3f7ef;     /* green-tinted ground */
-    --trail: #e8622c;    /* runner-vest orange, for overrun + small accents */
-    --bark: #5d6f5e;     /* secondary text */
-    --line: #d5e4d0;
-    --card-shadow: 0 8px 24px rgba(29, 58, 42, 0.08);
+    --sign: #0e3b2c;       /* signboard green: boards, buttons, the line map */
+    --sign-deep: #092a1f;
+    --pcn: #2f7d46;        /* live-route green, matches the map polyline */
+    --leaf: #e3edd7;       /* soft wash for hovers/selection */
+    --paper: #f1efe4;      /* warm paper ground */
+    --card: #fdfcf7;       /* warm white panels */
+    --ink: #24352b;
+    --moss: #66735f;       /* secondary text */
+    --amber: #e8a20c;      /* signage stripe, warnings, overrun */
+    --amber-ink: #8a6207;
+    --line: #ded8c2;       /* warm hairline */
+    --card-shadow: 0 10px 26px rgba(14, 59, 44, 0.09);
     --error: #b3261e;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Outfit", system-ui, sans-serif; background: var(--mist);
-         color: var(--canopy); line-height: 1.5; }
+  body { margin: 0; font-family: "Overpass", system-ui, sans-serif; background: var(--paper);
+         color: var(--ink); line-height: 1.55; }
 
-  header { background: linear-gradient(130deg, #142b1d 0%, #1f5230 70%, #2a6b3e 100%);
-           color: var(--mist); padding: 1.3rem 1.4rem 1.1rem; }
-  .brand { max-width: 800px; margin: 0 auto; display: flex; gap: 0.85rem; align-items: center; }
-  .brand .mark { font-size: 1.9rem; }
-  header h1 { margin: 0; font-family: "Barlow Condensed", sans-serif; font-weight: 700;
-              font-size: 1.85rem; letter-spacing: 0.07em; text-transform: uppercase;
-              line-height: 1.05; }
-  header p { margin: 0.15rem 0 0; font-size: 0.86rem; color: #cfe3c4; font-weight: 400; }
-  .trail-divider { height: 5px;
-                   background: repeating-linear-gradient(90deg,
-                     var(--leaf) 0 16px, transparent 16px 30px); }
+  /* Header as a mounted signboard: white inner keyline, amber edge strip below. */
+  header { background: linear-gradient(160deg, var(--sign) 20%, var(--sign-deep) 100%);
+           color: #fff; padding: 1.35rem 1.4rem 1.2rem; }
+  .brand { max-width: 800px; margin: 0 auto; display: flex; gap: 1rem; align-items: center;
+           border: 1.5px solid rgba(255, 255, 255, 0.35); border-radius: 12px;
+           padding: 0.85rem 1.1rem; }
+  .brand .mark { flex: none; display: grid; place-items: center; width: 2.7rem; height: 2.7rem;
+                 font-size: 1.35rem; background: #fff; border-radius: 50%;
+                 box-shadow: 0 0 0 3px var(--sign), 0 0 0 4.5px rgba(255, 255, 255, 0.5); }
+  header h1 { margin: 0; font-weight: 800; font-size: 1.6rem; letter-spacing: 0.13em;
+              text-transform: uppercase; line-height: 1.1; }
+  header p { margin: 0.2rem 0 0; font-family: "Overpass Mono", monospace; font-size: 0.72rem;
+             letter-spacing: 0.08em; color: #cfe0c8; }
+  .trail-divider { height: 4px; background: var(--amber); }
 
-  main { max-width: 800px; margin: 0 auto; padding: 1.3rem 1.2rem 2.5rem; }
+  main { max-width: 800px; margin: 0 auto; padding: 1.4rem 1.2rem 2.5rem; }
 
-  form { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: end; background: #fff;
-         border: 1px solid var(--line); border-radius: 18px; padding: 1.15rem 1.25rem;
-         box-shadow: var(--card-shadow); }
-  form > label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem;
-                 font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
-                 color: var(--bark); }
-  input { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 11px;
-          font-size: 0.98rem; font-family: inherit; color: var(--canopy); background: #fff;
-          transition: border-color 0.15s; }
-  input:focus { outline: 3px solid rgba(47, 125, 70, 0.22); border-color: var(--fern); }
+  form { display: flex; flex-wrap: wrap; gap: 0.85rem; align-items: end;
+         background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+         padding: 1.15rem 1.25rem; box-shadow: var(--card-shadow); }
+  form > label { display: flex; flex-direction: column; gap: 0.35rem;
+                 font-family: "Overpass Mono", monospace; font-size: 0.64rem; font-weight: 600;
+                 letter-spacing: 0.13em; text-transform: uppercase; color: var(--moss); }
+  input { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 9px;
+          font-size: 0.98rem; font-family: "Overpass", system-ui, sans-serif;
+          color: var(--ink); background: #fff; transition: border-color 0.15s; }
+  input:focus { outline: 3px solid rgba(47, 125, 70, 0.25); border-color: var(--pcn); }
   #address { width: 17rem; }
-  #distance { width: 6.2rem; }
+  #distance { width: 6.2rem; font-variant-numeric: tabular-nums; }
 
-  button { padding: 0.62rem 1.15rem; border: 0; border-radius: 999px; font-size: 0.92rem;
-           font-family: inherit; font-weight: 600; cursor: pointer;
-           background: var(--leaf); color: var(--canopy); transition: background 0.15s; }
-  button:hover:not(:disabled) { background: #cbe4b4; }
-  button.primary { background: var(--fern); color: #fff; }
-  button.primary:hover:not(:disabled) { background: var(--fern-deep); }
+  button { padding: 0.62rem 1.1rem 0.55rem; border: 0; border-radius: 9px; cursor: pointer;
+           font-family: "Overpass", system-ui, sans-serif; font-weight: 700; font-size: 0.8rem;
+           letter-spacing: 0.07em; text-transform: uppercase;
+           background: var(--leaf); color: var(--sign); transition: background 0.15s; }
+  button:hover:not(:disabled) { background: #d3e3bf; }
+  button.primary { background: var(--sign); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--sign-deep); }
   button:disabled { opacity: 0.55; cursor: wait; }
   button:focus-visible, input:focus-visible, a:focus-visible {
-    outline: 3px solid rgba(47, 125, 70, 0.45); outline-offset: 2px; }
+    outline: 3px solid rgba(47, 125, 70, 0.5); outline-offset: 2px; }
 
-  .shape-toggle { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px;
+  .shape-toggle { display: inline-flex; border: 1.5px solid var(--line); border-radius: 9px;
                   overflow: hidden; background: #fff; }
-  .shape-toggle label { flex-direction: row; padding: 0.55rem 1rem; font-weight: 500;
-                        font-size: 0.9rem; cursor: pointer; color: var(--bark);
+  .shape-toggle label { flex-direction: row; padding: 0.55rem 0.95rem 0.5rem;
+                        font-family: "Overpass", system-ui, sans-serif; font-weight: 600;
+                        font-size: 0.88rem; cursor: pointer; color: var(--moss);
                         text-transform: none; letter-spacing: 0; }
-  .shape-toggle label:has(input:checked) { background: var(--fern); color: #fff;
-                                           font-weight: 600; }
+  .shape-toggle label:has(input:checked) { background: var(--sign); color: #fff; }
   .shape-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 
   .suggest { position: relative; display: block; }
   .suggest input { width: 100%; padding-right: 2.2rem; }
   #clear { position: absolute; right: 0.3rem; top: 50%; transform: translateY(-50%);
            background: none; border: 0; padding: 0.18rem 0.5rem; font-size: 0.9rem;
-           color: var(--bark); cursor: pointer; border-radius: 999px; }
-  #clear:hover { color: var(--canopy); background: var(--leaf); }
+           color: var(--moss); cursor: pointer; border-radius: 999px; }
+  #clear:hover { color: var(--sign); background: var(--leaf); }
   #suggestions { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 1100;
                  width: max(100%, 23rem); max-width: 82vw; margin: 0; padding: 0.35rem;
-                 list-style: none; background: #fff; border: 1px solid var(--line);
-                 border-radius: 14px; box-shadow: 0 14px 34px rgba(29, 58, 42, 0.18); }
-  #suggestions li { padding: 0.5rem 0.7rem; border-radius: 9px; cursor: pointer;
-                    font-weight: 400; text-transform: none; letter-spacing: 0;
-                    color: var(--canopy); }
-  #suggestions li b { display: block; font-size: 0.92rem; font-weight: 600; }
-  #suggestions li small { color: var(--bark); font-size: 0.76rem; }
+                 list-style: none; background: var(--card); border: 1px solid var(--line);
+                 border-radius: 12px; box-shadow: 0 14px 34px rgba(14, 59, 44, 0.18); }
+  #suggestions li { padding: 0.5rem 0.7rem; border-radius: 8px; cursor: pointer;
+                    font-family: "Overpass", system-ui, sans-serif; font-weight: 400;
+                    text-transform: none; letter-spacing: 0; color: var(--ink); }
+  #suggestions li b { display: block; font-size: 0.92rem; font-weight: 700; }
+  #suggestions li small { color: var(--moss); font-size: 0.76rem; }
   #suggestions li.active, #suggestions li:hover { background: var(--leaf); }
 
   /* Status card: the progress bar is a trail with a runner on it. */
-  #status-card { margin: 1rem 0; padding: 0.95rem 1.2rem 1.05rem; background: #fff;
-                 border: 1px solid var(--line); border-radius: 16px;
+  #status-card { margin: 1rem 0; padding: 0.95rem 1.2rem 1.05rem; background: var(--card);
+                 border: 1px solid var(--line); border-radius: 14px;
                  box-shadow: var(--card-shadow); }
-  #status-card.error { border-color: #e6c4c1; }
+  #status-card.error { border-color: #e2c0bd; }
   #status-card.error #status-text { color: var(--error); }
-  #status-card.done { background: linear-gradient(180deg, #ffffff, #f2f9ec); }
+  #status-card.done { background: linear-gradient(180deg, var(--card), #f0f5e6); }
   .status-top { display: flex; justify-content: space-between; align-items: baseline;
-                gap: 1rem; font-size: 0.97rem; font-weight: 600; }
-  #status-time { font-variant-numeric: tabular-nums; color: var(--fern-deep);
-                 white-space: nowrap; font-size: 0.88rem; font-weight: 500; }
-  #status-card.overrun #status-time { color: var(--trail); }
+                gap: 1rem; font-size: 0.95rem; font-weight: 600; }
+  #status-time { font-family: "Overpass Mono", monospace; font-variant-numeric: tabular-nums;
+                 color: var(--pcn); white-space: nowrap; font-size: 0.8rem; font-weight: 600; }
+  #status-card.overrun #status-time { color: var(--amber-ink); }
   .bar { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
   .bar[hidden] { display: none; }
-  .track { position: relative; flex: 1; height: 12px; border-radius: 999px;
-           background: #eaf2e3 repeating-linear-gradient(90deg,
-             transparent 0 12px, #d3e4c9 12px 20px); }
+  .track-bar { position: relative; flex: 1; height: 12px; border-radius: 999px;
+               background: #ece9da repeating-linear-gradient(90deg,
+                 transparent 0 12px, #ddd8c2 12px 20px); }
   #bar-fill { height: 100%; width: 0%; border-radius: 999px; transition: width 0.25s linear;
-              background: linear-gradient(90deg, var(--fern), #6fae53); }
-  #status-card.overrun #bar-fill { background: linear-gradient(90deg, var(--trail), #f19a5e); }
+              background: linear-gradient(90deg, var(--pcn), #6fae53); }
+  #status-card.overrun #bar-fill { background: linear-gradient(90deg, var(--amber), #f0bd4e); }
   #bar-runner { position: absolute; top: -0.85rem; left: 0; font-size: 1.15rem;
                 transition: left 0.25s linear; }
-  .finish { font-size: 0.95rem; }
+  .finish-flag { font-size: 0.95rem; }
 
   #result { display: none; }
   .route-tabs { display: none; flex-wrap: wrap; gap: 0.5rem; margin: 0.2rem 0 0.9rem; }
   .route-tabs.visible { display: flex; }
-  .route-tabs button { padding: 0.45rem 0.9rem; font-size: 0.84rem; font-weight: 500;
-                       background: #fff; border: 1.5px solid var(--line); color: var(--bark); }
-  .route-tabs button b { color: var(--canopy); font-weight: 600; }
-  .route-tabs button.active { background: var(--fern); border-color: var(--fern); color: #fff; }
+  .route-tabs button { padding: 0.5rem 0.9rem 0.42rem; font-size: 0.78rem; font-weight: 600;
+                       letter-spacing: 0.04em; background: var(--card);
+                       border: 1.5px solid var(--line); color: var(--moss); }
+  .route-tabs button b { color: var(--sign); font-weight: 700; }
+  .route-tabs button.active { background: var(--sign); border-color: var(--sign); color: #fff; }
   .route-tabs button.active b { color: #fff; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-           gap: 0.7rem 0.5rem; margin: 0.4rem 0 1rem; padding: 0.7rem 0.9rem;
-           background: #fff; border: 1px solid var(--line); border-radius: 14px;
-           box-shadow: var(--card-shadow); }
-  .stats div { text-align: center; }
-  .stats b { display: block; font-family: "Barlow Condensed", sans-serif; font-weight: 700;
-             font-size: 1.4rem; line-height: 1.1; color: var(--canopy);
-             font-variant-numeric: tabular-nums; }
-  .stats span { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.09em;
-                text-transform: uppercase; color: var(--bark); }
+
+  /* The line map: metrics as stops between a START roundel and a FINISH bullseye.
+     Horizontal on wide screens, a vertical station strip on phones. */
+  .stats { display: flex; align-items: stretch; margin: 0.4rem 0 1.1rem;
+           padding: 0.85rem 0.5rem 0.7rem; background: var(--card);
+           border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--card-shadow); }
+  .stop { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
+          gap: 0.3rem; }
+  .stop.start, .stop.finish { flex: 0 0 3.4rem; }
+  .stop b { order: 1; min-height: 1.5rem; display: flex; align-items: flex-end;
+            font-weight: 800; font-size: 1.22rem; line-height: 1.1; color: var(--sign);
+            font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stop .track { order: 2; position: relative; width: 100%; height: 18px;
+                 display: flex; align-items: center; justify-content: center; }
+  .stop .track::before { content: ""; position: absolute; top: 50%; left: 0; right: 0;
+                         height: 3.5px; transform: translateY(-50%); background: var(--sign); }
+  .stop:first-child .track::before { left: 50%; }
+  .stop:last-child .track::before { right: 50%; }
+  .stop .track::after { content: ""; position: relative; width: 11px; height: 11px;
+                        border-radius: 50%; background: var(--card);
+                        border: 3.5px solid var(--sign); }
+  .stop.start .track::after { background: var(--sign); }
+  .stop.finish .track::after { background: var(--sign);
+                               box-shadow: inset 0 0 0 2.5px var(--card); }
+  .stop span { order: 3; font-family: "Overpass Mono", monospace; font-size: 0.6rem;
+               font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+               color: var(--moss); text-align: center; text-wrap: balance; }
 
   .actions { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center;
              margin-bottom: 1rem; }
-  a.gmaps { display: inline-block; padding: 0.65rem 1.25rem; background: var(--fern);
-            color: #fff; border-radius: 999px; text-decoration: none; font-weight: 600;
-            font-size: 0.95rem; }
-  a.gmaps:hover { background: var(--fern-deep); }
-  #alt { background: #fff; color: var(--fern-deep); border: 2px solid var(--fern); }
+  a.gmaps { display: inline-block; padding: 0.68rem 1.25rem 0.6rem; background: var(--sign);
+            color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700;
+            font-size: 0.8rem; letter-spacing: 0.07em; text-transform: uppercase; }
+  a.gmaps:hover { background: var(--sign-deep); }
+  #alt { background: var(--card); color: var(--sign); border: 2px solid var(--sign); }
   #alt:hover:not(:disabled) { background: var(--leaf); }
 
-  #map { height: 440px; border-radius: 18px; border: 1px solid var(--line);
+  #map { height: 440px; border-radius: 14px; border: 1px solid var(--line);
          box-shadow: var(--card-shadow); }
-  ul.warnings { color: #9a6b00; font-size: 0.86rem; margin: 0.7rem 0; }
+  ul.warnings { color: var(--amber-ink); font-size: 0.86rem; margin: 0.7rem 0; }
 
-  footer { margin-top: 1.4rem; font-size: 0.78rem; color: var(--bark); }
-  footer a { color: var(--fern-deep); }
+  footer { margin-top: 1.5rem; font-family: "Overpass Mono", monospace; font-size: 0.68rem;
+           letter-spacing: 0.02em; color: var(--moss); }
+  footer a { color: var(--sign); }
 
   @media (max-width: 640px) {
-    header h1 { font-size: 1.5rem; }
+    header h1 { font-size: 1.3rem; }
     #address { width: 100%; }
     .suggest { width: 100%; }
     form > label:first-child { width: 100%; }
     #map { height: 340px; }
+  }
+  @media (max-width: 760px) {
+    .stop b { font-size: 1.05rem; }
+  }
+  @media (max-width: 640px) {
+    /* Rotate the line map into a vertical station strip. */
+    .stats { flex-direction: column; padding: 0.7rem 1.1rem; }
+    .stop, .stop.start, .stop.finish { flex: none; flex-direction: row; align-items: center;
+                                       gap: 0.8rem; width: 100%; padding: 0.32rem 0; }
+    .stop .track { order: 0; width: 18px; height: auto; align-self: stretch;
+                   min-height: 1.9rem; }
+    .stop .track::before { top: -0.32rem; bottom: -0.32rem; left: 50%; right: auto;
+                           width: 3.5px; height: auto; transform: translateX(-50%); }
+    .stop:first-child .track::before { top: 50%; }
+    .stop:last-child .track::before { bottom: 50%; top: -0.32rem; }
+    .stop span { order: 1; flex: 1; text-align: left; }
+    .stop b { order: 2; min-height: 0; align-items: center; }
   }
   @media (prefers-reduced-motion: reduce) {
     #bar-fill, #bar-runner, input, button { transition: none; }
@@ -166,7 +212,7 @@
     <span class="mark" aria-hidden="true">🏃</span>
     <div>
       <h1>Park Run Planner</h1>
-      <p>The greenest running routes on Singapore's park connectors</p>
+      <p>Greenest routes · Singapore park connector network</p>
     </div>
   </div>
 </header>
@@ -206,21 +252,23 @@
       <span id="status-time"></span>
     </div>
     <div class="bar" id="bar" hidden>
-      <div class="track">
+      <div class="track-bar">
         <div id="bar-fill"></div>
         <span id="bar-runner" aria-hidden="true">🏃</span>
       </div>
-      <span class="finish" aria-hidden="true">🏁</span>
+      <span class="finish-flag" aria-hidden="true">🏁</span>
     </div>
   </div>
   <section id="result">
     <div class="route-tabs" id="route-tabs" role="tablist" aria-label="Planned routes"></div>
     <div class="stats">
-      <div><b id="stat-dist">–</b><span>route length</span></div>
-      <div><b id="stat-green">–</b><span>on parks &amp; connectors</span></div>
-      <div><b id="stat-type">–</b><span>route shape</span></div>
-      <div><b id="stat-crossings">–</b><span>roads crossed</span></div>
-      <div><b id="stat-elev">–</b><span>max climb</span></div>
+      <div class="stop start"><b></b><i class="track" aria-hidden="true"></i><span>start</span></div>
+      <div class="stop"><b id="stat-dist">–</b><i class="track" aria-hidden="true"></i><span>route length</span></div>
+      <div class="stop"><b id="stat-green">–</b><i class="track" aria-hidden="true"></i><span>on parks &amp; connectors</span></div>
+      <div class="stop"><b id="stat-type">–</b><i class="track" aria-hidden="true"></i><span>route shape</span></div>
+      <div class="stop"><b id="stat-crossings">–</b><i class="track" aria-hidden="true"></i><span>roads crossed</span></div>
+      <div class="stop"><b id="stat-elev">–</b><i class="track" aria-hidden="true"></i><span>max climb</span></div>
+      <div class="stop finish"><b></b><i class="track" aria-hidden="true"></i><span>finish</span></div>
     </div>
     <div class="actions">
       <a class="gmaps" id="gmaps" target="_blank" rel="noopener">Open in Google Maps ↗</a>
