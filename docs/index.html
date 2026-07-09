@@ -45,6 +45,12 @@
               text-transform: uppercase; line-height: 1.1; }
   header p { margin: 0.2rem 0 0; font-family: "Overpass Mono", monospace; font-size: 0.72rem;
              letter-spacing: 0.08em; color: #cfe0c8; }
+  .about-link { margin-left: auto; flex: none; color: #fff; text-decoration: none;
+                font-family: "Overpass Mono", monospace; font-size: 0.72rem; font-weight: 600;
+                letter-spacing: 0.12em; text-transform: uppercase;
+                border: 1.5px solid rgba(255, 255, 255, 0.35); border-radius: 999px;
+                padding: 0.45rem 0.95rem 0.35rem; transition: background 0.15s; }
+  .about-link:hover { background: rgba(255, 255, 255, 0.14); }
   .trail-divider { height: 4px; background: var(--amber); }
 
   main { max-width: 800px; margin: 0 auto; padding: 1.4rem 1.2rem 2.5rem; }
@@ -238,6 +244,7 @@
       <h1>Park Run Planner</h1>
       <p>Greenest routes · parks, connectors &amp; waterfronts</p>
     </div>
+    <a class="about-link" href="about.html">About</a>
   </div>
 </header>
 <div class="trail-divider" aria-hidden="true"></div>

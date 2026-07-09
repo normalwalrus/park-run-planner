@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — Park Run Planner</title>
+<meta name="description" content="Park Run Planner finds the greenest running loop from wherever you are — parks, connectors and waterfronts instead of roadside pavement. Free, no account, opens in Google Maps.">
+<meta name="theme-color" content="#0e3b2c">
+<meta property="og:title" content="Park Run Planner — run through parks, not past traffic">
+<meta property="og:description" content="Free route planner that finds the greenest running loop wherever you are, and hands it to you as a Google Maps link.">
+<meta property="og:image" content="https://normalwalrus.github.io/park-run-planner/img/route-example.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Same signage system as the app: NParks-style boards on warm paper. */
+  :root {
+    --sign: #0e3b2c;
+    --sign-deep: #092a1f;
+    --pcn: #2f7d46;
+    --leaf: #e3edd7;
+    --paper: #f1efe4;
+    --card: #fdfcf7;
+    --ink: #24352b;
+    --moss: #66735f;
+    --amber: #e8a20c;
+    --line: #ded8c2;
+    --card-shadow: 0 10px 26px rgba(14, 59, 44, 0.09);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Overpass", system-ui, sans-serif; background: var(--paper);
+         color: var(--ink); line-height: 1.55; }
+
+  header { background: linear-gradient(160deg, var(--sign) 20%, var(--sign-deep) 100%);
+           color: #fff; padding: 1.35rem 1.4rem 1.2rem; }
+  .brand { max-width: 800px; margin: 0 auto; display: flex; gap: 1rem; align-items: center;
+           border: 1.5px solid rgba(255, 255, 255, 0.35); border-radius: 12px;
+           padding: 0.85rem 1.1rem; color: #fff; text-decoration: none; }
+  .brand .mark { flex: none; display: grid; place-items: center; width: 2.7rem; height: 2.7rem;
+                 font-size: 1.35rem; background: #fff; border-radius: 50%;
+                 box-shadow: 0 0 0 3px var(--sign), 0 0 0 4.5px rgba(255, 255, 255, 0.5); }
+  header h1 { margin: 0; font-weight: 800; font-size: 1.6rem; letter-spacing: 0.13em;
+              text-transform: uppercase; line-height: 1.1; }
+  header p { margin: 0.2rem 0 0; font-family: "Overpass Mono", monospace; font-size: 0.72rem;
+             letter-spacing: 0.08em; color: #cfe0c8; }
+  .trail-divider { height: 4px; background: var(--amber); }
+
+  main { max-width: 800px; margin: 0 auto; padding: 1.4rem 1.2rem 2.5rem; }
+
+  .cta { display: inline-block; background: var(--sign); color: #fff; text-decoration: none;
+         cursor: pointer; border: 0; border-radius: 9px; padding: 0.85rem 1.6rem 0.75rem;
+         font-weight: 700; font-size: 0.95rem; letter-spacing: 0.07em; text-transform: uppercase;
+         transition: background 0.2s; }
+  .cta:hover { background: var(--sign-deep); }
+  .cta:focus-visible { outline: 3px solid rgba(47, 125, 70, 0.5); outline-offset: 2px; }
+
+  .hero { text-align: center; padding: 2.6rem 0 2.2rem; }
+  .hero h2 { margin: 0 0 0.7rem; font-size: clamp(1.9rem, 5.4vw, 2.7rem); font-weight: 800;
+             line-height: 1.12; letter-spacing: -0.01em; color: var(--sign); }
+  .hero .sub { margin: 0 auto 1.5rem; max-width: 34rem; font-size: 1.08rem; color: var(--ink); }
+  .trust { margin-top: 0.9rem; font-family: "Overpass Mono", monospace; font-size: 0.7rem;
+           letter-spacing: 0.12em; text-transform: uppercase; color: var(--moss); }
+
+  .shot { margin: 0.6rem 0 0; }
+  .shot img { display: block; width: 100%; border-radius: 14px; border: 1px solid var(--line);
+              box-shadow: var(--card-shadow); }
+  .shot figcaption { margin-top: 0.55rem; text-align: center; font-family: "Overpass Mono", monospace;
+                     font-size: 0.72rem; letter-spacing: 0.08em; color: var(--moss); }
+
+  section h3 { margin: 2.6rem 0 1.1rem; font-family: "Overpass Mono", monospace;
+               font-size: 0.78rem; font-weight: 700; letter-spacing: 0.16em;
+               text-transform: uppercase; color: var(--moss); text-align: center; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+              gap: 0.85rem; }
+  .features article { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+                      padding: 1.05rem 1.1rem 0.95rem; box-shadow: var(--card-shadow); }
+  .features .icon { font-size: 1.4rem; }
+  .features h4 { margin: 0.4rem 0 0.25rem; font-size: 1rem; font-weight: 700; color: var(--sign); }
+  .features p { margin: 0; font-size: 0.9rem; color: var(--ink); }
+
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.85rem;
+           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); counter-reset: step; }
+  .steps li { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+              padding: 1.05rem 1.1rem 0.95rem; box-shadow: var(--card-shadow); counter-increment: step; }
+  .steps li::before { content: counter(step); display: grid; place-items: center;
+                      width: 1.9rem; height: 1.9rem; margin-bottom: 0.5rem; border-radius: 50%;
+                      background: var(--pcn); color: #fff; font-family: "Overpass Mono", monospace;
+                      font-weight: 700; }
+  .steps h4 { margin: 0 0 0.25rem; font-size: 1rem; color: var(--sign); }
+  .steps p { margin: 0; font-size: 0.9rem; }
+
+  .faq details { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+                 padding: 0.75rem 1rem; margin-bottom: 0.6rem; box-shadow: var(--card-shadow); }
+  .faq summary { cursor: pointer; font-weight: 700; color: var(--sign); }
+  .faq summary::marker { color: var(--pcn); }
+  .faq p { margin: 0.6rem 0 0.2rem; font-size: 0.93rem; }
+
+  .closing { text-align: center; margin-top: 3rem; padding: 2.2rem 1.2rem;
+             background: linear-gradient(160deg, var(--sign) 20%, var(--sign-deep) 100%);
+             border-radius: 16px; color: #fff; }
+  .closing h3 { margin: 0 0 1.2rem; color: #fff; font-family: "Overpass", system-ui, sans-serif;
+                font-size: 1.45rem; font-weight: 800; letter-spacing: 0; text-transform: none; }
+  .closing .cta { background: #fff; color: var(--sign); }
+  .closing .cta:hover { background: var(--leaf); }
+
+  footer { margin-top: 2rem; font-size: 0.78rem; color: var(--moss); text-align: center; }
+  footer a { color: var(--pcn); }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="./">
+    <span class="mark" aria-hidden="true">🏃</span>
+    <div>
+      <h1>Park Run Planner</h1>
+      <p>Greenest routes · parks, connectors &amp; waterfronts</p>
+    </div>
+  </a>
+</header>
+<div class="trail-divider" aria-hidden="true"></div>
+<main>
+  <section class="hero">
+    <h2>Run through parks,<br>not past traffic.</h2>
+    <p class="sub">Tell it where you are and how far you feel like running. It finds the
+      greenest possible loop — park connectors, gardens, waterfronts — and hands it to you
+      as a Google Maps link you can follow step for step.</p>
+    <a class="cta" href="./">Plan my run — it's free</a>
+    <p class="trust">No sign-up · No tracking · Runs entirely in your browser</p>
+  </section>
+
+  <figure class="shot">
+    <img src="img/route-example.jpg" width="1556" height="1276"
+         alt="A planned 5.61 km loop at East Coast Park shown on a map, with stats: 100% on parks and connectors, zero roads crossed, 3 sights passed.">
+    <figcaption>5.61 km at East Coast Park — 100% on parks &amp; connectors, zero roads crossed.</figcaption>
+  </figure>
+
+  <section aria-labelledby="features-h">
+    <h3 id="features-h">Why runners like it</h3>
+    <div class="features">
+      <article>
+        <span class="icon" aria-hidden="true">🌳</span>
+        <h4>Greenest route first</h4>
+        <p>Every path around you is scored: connectors, park paths and waterside promenades
+           are cheap, big roads are expensive. The route bends toward the green.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true">🔁</span>
+        <h4>Loops, one-ways, alternates</h4>
+        <p>A loop of your target distance, a one-way "straight" run, or one press of
+           <em>Alternate route</em> for a genuinely different loop from the same door.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true">⛰️</span>
+        <h4>Hills — dodge or chase them</h4>
+        <p>Real elevation data shapes the route. Keep it flat on easy days, or ask it to
+           find you a climb when you're training.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true">🏛️</span>
+        <h4>Sights along the way</h4>
+        <p>Turn on <em>Prioritise sights</em> and the loop leans past viewpoints, monuments
+           and gardens — your easy run doubles as a tour.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true">🚧</span>
+        <h4>Never onto highways</h4>
+        <p>Roads where pedestrians are banned never even enter the map data, and every road
+           crossing on your route is counted and reported.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true">📱</span>
+        <h4>Follow it in Google Maps</h4>
+        <p>One tap opens your route as walking directions with waypoints that pin it onto
+           the green paths. No new app to install.</p>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <h3 id="how-h">How it works</h3>
+    <ol class="steps">
+      <li>
+        <h4>Pick a start</h4>
+        <p>Search any place — 238 countries, with extra polish (postal codes, curated spots)
+           in Singapore — or just use your location. Set your distance.</p>
+      </li>
+      <li>
+        <h4>It scores every path</h4>
+        <p>The OpenStreetMap walking network around you is downloaded and weighted for
+           greenness, hills, crossings and sights, then searched for the best loop.</p>
+      </li>
+      <li>
+        <h4>Run</h4>
+        <p>Check the route on the map, open it in Google Maps, and go. Want variety?
+           Alternate routes steer away from paths you've already been given.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="faq" aria-labelledby="faq-h">
+    <h3 id="faq-h">Fair questions</h3>
+    <details>
+      <summary>Is it really free?</summary>
+      <p>Completely. There's no account, no key and no server doing the work — the whole
+         planner runs in your browser on free, open data (OpenStreetMap, OneMap, Photon and
+         open elevation tiles). It's <a href="https://github.com/normalwalrus/park-run-planner">open source</a>, too.</p>
+    </details>
+    <details>
+      <summary>Does it track me?</summary>
+      <p>No. Your location is used in your browser to plan the route and never sent to us —
+         there is no "us" to send it to. No analytics, no cookies, no ads.</p>
+    </details>
+    <details>
+      <summary>Will it send me along busy roads?</summary>
+      <p>It tries hard not to. Roads where pedestrians are banned are excluded outright,
+         big roads cost 6× more than park paths in the search, and the <em>Stay in parks</em>
+         toggle makes streets a last resort. When a road can't be avoided, the stats tell
+         you exactly how many crossings to expect.</p>
+    </details>
+    <details>
+      <summary>Which countries does it cover?</summary>
+      <p>Pick from 238 countries. Singapore is the default and the most polished — it's
+         where the planner was born, on the Park Connector Network — but the routing works
+         anywhere OpenStreetMap does, which is pretty much everywhere.</p>
+    </details>
+    <details>
+      <summary>Why isn't the route exactly the distance I asked for?</summary>
+      <p>Greener beats exact: the planner aims within about a fifth of your target and shows
+         the true length before you set off. A 5 km ask might get you a lovely 5.4 km — call
+         it a bonus.</p>
+    </details>
+    <details>
+      <summary>Can I get a different route from the same start?</summary>
+      <p>Yes — press <em>Alternate route</em>. Each press steers away from the paths you've
+         already been given, and your recent routes stay one click away as tabs.</p>
+    </details>
+  </section>
+
+  <div class="closing">
+    <h3>Your greenest run is one click away.</h3>
+    <a class="cta" href="./">Plan my run</a>
+  </div>
+
+  <footer>
+    Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors;
+    search by <a href="https://www.onemap.gov.sg/">OneMap</a> © Singapore Land Authority (Singapore)
+    and <a href="https://photon.komoot.io/">Photon</a> (elsewhere); elevation from
+    <a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles on AWS</a>.
+    <a href="https://github.com/normalwalrus/park-run-planner">Source on GitHub</a>.
+  </footer>
+</main>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Is Park Run Planner free?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Completely free: no account, no API key, and the planner runs entirely in your browser on open data."}},
+    {"@type": "Question", "name": "Does Park Run Planner track me?",
+     "acceptedAnswer": {"@type": "Answer", "text": "No. Your location is used in your browser to plan the route and is never sent to a server. No analytics, cookies or ads."}},
+    {"@type": "Question", "name": "Will it send me along busy roads or highways?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Roads where pedestrians are banned are excluded outright, big roads are heavily penalized in the route search, and a Stay in parks mode makes streets a last resort."}},
+    {"@type": "Question", "name": "Which countries does it cover?",
+     "acceptedAnswer": {"@type": "Answer", "text": "238 countries. Singapore is the default and most polished, but routing works anywhere OpenStreetMap has data."}},
+    {"@type": "Question", "name": "Why isn't the route exactly the distance I asked for?",
+     "acceptedAnswer": {"@type": "Answer", "text": "The planner trades a little distance for a lot of greenness, aiming within about 20% of your target and reporting the exact length before you run."}},
+    {"@type": "Question", "name": "Can I get a different route from the same start?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Yes — the Alternate route button generates a genuinely different loop by steering away from paths already suggested."}}
+  ]
+}
+</script>
+</body>
+</html>
