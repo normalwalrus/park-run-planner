@@ -27,7 +27,7 @@ test("in-park edges are green", () => {
 });
 
 test("big roads penalized", () => {
-  for (const highway of ["primary", "secondary_link", "trunk"]) {
+  for (const highway of ["primary", "secondary_link", "trunk", "motorway", "motorway_link"]) {
     assert.equal(edgeFactor({ highway }), ROAD_FACTOR);
   }
 });

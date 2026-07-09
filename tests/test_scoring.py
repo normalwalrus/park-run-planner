@@ -20,7 +20,7 @@ def test_in_park_flag_is_green():
 
 
 def test_big_roads_penalized():
-    for highway in ["primary", "secondary_link", "trunk"]:
+    for highway in ["primary", "secondary_link", "trunk", "motorway", "motorway_link"]:
         assert scoring.edge_factor({"highway": highway}) == scoring.ROAD_FACTOR
 
 

@@ -130,6 +130,35 @@ test("edges near a river are marked green, distant ones are not", () => {
   assert.equal(farEdge.green, false);
 });
 
+test("buildGraph drops ways where pedestrians are banned", () => {
+  const elements = [
+    {
+      type: "way",
+      nodes: [1, 2, 3],
+      geometry: [
+        { lat: 1.35, lon: 103.8 },
+        { lat: 1.35, lon: 103.801 },
+        { lat: 1.35, lon: 103.802 },
+      ],
+      tags: { highway: "residential" },
+    },
+    {
+      // expressway-like trunk: pedestrians banned, must not become an edge
+      type: "way",
+      nodes: [3, 4],
+      geometry: [
+        { lat: 1.35, lon: 103.802 },
+        { lat: 1.35, lon: 103.803 },
+      ],
+      tags: { highway: "trunk", foot: "no" },
+    },
+  ];
+  const graph = buildGraph(elements);
+  assert.deepEqual([...graph.nodes.keys()].sort(), [1, 2, 3]);
+  assert.ok(!graph.adj.has(4));
+  assert.ok(graph.adj.get(3).every((e) => e.to !== 4));
+});
+
 test("waterside detection keeps its width at high latitudes", () => {
   // At 60°N a longitude degree is only ~55.7 km, so a 40 m corridor needs a
   // wider east-west bbox margin than at the equator.

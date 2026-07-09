@@ -21,6 +21,10 @@ const ROAD_HIGHWAYS = new Set([
   "tertiary_link",
   "trunk",
   "trunk_link",
+  // Motorways never enter the walking graph; scored as roads anyway so one
+  // slipping through a data quirk is heavily penalized, not neutral.
+  "motorway",
+  "motorway_link",
 ]);
 const PCN_NAME = /park connector|pcn/i;
 
@@ -39,6 +43,8 @@ const ROAD_LEVELS = new Map([
   ["primary_link", 3],
   ["trunk", 3],
   ["trunk_link", 3],
+  ["motorway", 3],
+  ["motorway_link", 3],
 ]);
 
 export function roadLevel(highway) {

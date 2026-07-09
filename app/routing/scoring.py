@@ -24,6 +24,11 @@ ROAD_HIGHWAYS = {
     "tertiary_link",
     "trunk",
     "trunk_link",
+    # Motorways never enter the walking graph (osmnx's walk filter drops them
+    # and foot=no ways); scored as roads anyway so one slipping through a data
+    # quirk is heavily penalized, not neutral.
+    "motorway",
+    "motorway_link",
 }
 
 _PCN_NAME = re.compile(r"park connector|pcn", re.IGNORECASE)

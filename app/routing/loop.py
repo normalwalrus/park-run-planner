@@ -91,6 +91,8 @@ ROAD_LEVELS = {
     "primary_link": 3,
     "trunk": 3,
     "trunk_link": 3,
+    "motorway": 3,
+    "motorway_link": 3,
 }
 
 

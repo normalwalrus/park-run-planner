@@ -40,7 +40,7 @@ function query(lat, lng, radius) {
   const around = `around:${Math.round(radius)},${lat},${lng}`;
   return `[out:json][timeout:30];
 (
-  way(${around})["highway"~"^(${WALK_HIGHWAYS})$"];
+  way(${around})["highway"~"^(${WALK_HIGHWAYS})$"]["foot"!~"^(no|private)$"];
   way(${around})["leisure"~"^(${PARK_LEISURE})$"];
   way(${around})["landuse"~"^(${PARK_LANDUSE})$"];
   nw(${around})["tourism"~"^(${SIGHT_TOURISM})$"]["name"];
@@ -220,6 +220,10 @@ export function buildGraph(elements) {
       }
     }
     if (!tags.highway) continue;
+    // Never route runners where pedestrians are banned (expressway-like
+    // trunks/primaries). The Overpass query filters these too; this guard
+    // covers payloads cached before the query did.
+    if (tags.foot === "no" || tags.foot === "private") continue;
     for (let i = 1; i < way.nodes.length; i++) {
       const [u, v] = [way.nodes[i - 1], way.nodes[i]];
       const [pu, pv] = [way.geometry[i - 1], way.geometry[i]];
@@ -305,7 +309,7 @@ function keepLargestComponent(nodes, adj) {
 // Overpass download again. Raw elements persist for a week per area, keyed like
 // the memory cache; QUERY_VERSION invalidates entries when query() changes.
 
-const QUERY_VERSION = 2;
+const QUERY_VERSION = 3;
 const IDB_NAME = "park-run-planner";
 const IDB_STORE = "overpass";
 const IDB_TTL_MS = 7 * 24 * 3600 * 1000;
