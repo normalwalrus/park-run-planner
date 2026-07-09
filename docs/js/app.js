@@ -1,17 +1,19 @@
-// UI wiring: run the whole planning pipeline in the browser (Singapore only).
+// UI wiring: run the whole planning pipeline in the browser.
 
 import { geocode, search, mergeSuggestions } from "./geocode.js";
-import { SG_BOUNDS, inSingapore } from "./geo.js";
+import { SG_BOUNDS, inBounds } from "./geo.js";
+import { COUNTRIES, countryByCode, detectCountry } from "./countries.js";
 import { loadGraph, isGraphCached } from "./overpass.js";
 import { planRoute, NoRouteError } from "./loop.js";
 import { googleMapsUrl } from "./maps.js";
 
 const SG_CENTER = [1.3521, 103.8198];
-const OUTSIDE_SG = "Park Run Planner currently covers Singapore only.";
 const MIN_QUERY_CHARS = 3;
 const DEBOUNCE_MS = 250;
+const COUNTRY_STORE = "prp:country";
 
-// Popular running spots, ranked first in the dropdown when they match.
+// Popular running spots (Singapore only), ranked first in the dropdown when
+// they match. Other countries rely purely on the geocoder.
 const SPOTS = [
   { name: "Bishan-Ang Mo Kio Park", lat: 1.3614, lng: 103.8455 },
   { name: "East Coast Park", lat: 1.3008, lng: 103.9122 },
@@ -32,17 +34,14 @@ const MAX_CACHED_ROUTES = 3;
 let session = null; // {start, distanceKm, shape, avoid, routes: [{id, route}], counter, activeId}
 const $ = (id) => document.getElementById(id);
 
-// Map is shown from the start, locked to Singapore.
+// Map is shown from the start; the view (and, for Singapore, the historical
+// lock on the island) follows the selected country — see applyCountry below.
 const [south, west, north, east] = SG_BOUNDS;
-const map = L.map("map", {
-  maxBounds: [
-    [south - 0.02, west - 0.02],
-    [north + 0.02, east + 0.02],
-  ],
-  maxBoundsViscosity: 1.0,
-  minZoom: 11,
-});
-map.setView(SG_CENTER, 12);
+const SG_MAX_BOUNDS = [
+  [south - 0.02, west - 0.02],
+  [north + 0.02, east + 0.02],
+];
+const map = L.map("map", { maxBoundsViscosity: 1.0 });
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
@@ -158,12 +157,12 @@ async function runSearch(query) {
   const seq = ++searchSeq;
   let results = [];
   try {
-    results = await search(query);
+    results = await search(query, country);
   } catch {
     results = []; // suggestion failures are silent; curated spots may still match
   }
   if (seq !== searchSeq || input.value.trim() !== query) return; // stale response
-  suggestions = mergeSuggestions(SPOTS, results, query);
+  suggestions = mergeSuggestions(country.code === "SG" ? SPOTS : [], results, query);
   activeIndex = -1;
   renderSuggestions();
 }
@@ -227,6 +226,64 @@ input.addEventListener("keydown", (event) => {
 
 input.addEventListener("blur", () => setTimeout(closeSuggestions, 150));
 
+// ---- Country selection --------------------------------------------------------
+
+const countrySelect = $("country");
+countrySelect.innerHTML = COUNTRIES.map(
+  (c) => `<option value="${c.code}">${c.name}</option>`
+).join("");
+
+function storedCountry() {
+  try {
+    return localStorage.getItem(COUNTRY_STORE);
+  } catch {
+    return null;
+  }
+}
+
+const params = new URLSearchParams(location.search);
+let country =
+  countryByCode(params.get("country")) ?? countryByCode(storedCountry()) ?? countryByCode("SG");
+
+function applyCountry(entry) {
+  country = entry;
+  try {
+    localStorage.setItem(COUNTRY_STORE, entry.code);
+  } catch {
+    // private mode — the choice just won't persist
+  }
+  countrySelect.value = entry.code;
+  input.placeholder = entry.code === "SG" ? "e.g. Bishan Park or 560406" : "e.g. Hyde Park";
+  if (entry.code === "SG") {
+    // The historical island lock: keeps the SG experience exactly as before.
+    map.setMinZoom(11);
+    map.setMaxBounds(SG_MAX_BOUNDS);
+    map.setView(SG_CENTER, 12);
+  } else {
+    map.setMaxBounds(null);
+    map.setMinZoom(3);
+    const [s, w, n, e] = entry.bbox;
+    // OSM tiles wrap horizontally, so an east edge past 180° renders fine.
+    map.fitBounds([
+      [s, w],
+      [n, e + (w > e ? 360 : 0)],
+    ]);
+  }
+}
+
+applyCountry(country);
+
+countrySelect.addEventListener("change", () => {
+  const entry = countryByCode(countrySelect.value);
+  if (!entry || entry.code === country.code) return;
+  applyCountry(entry);
+  coords = null;
+  input.value = "";
+  updateClearButton();
+  closeSuggestions();
+  card.hidden = true;
+});
+
 // ---- Location + planning ----------------------------------------------------
 
 $("locate").addEventListener("click", () => {
@@ -234,7 +291,14 @@ $("locate").addEventListener("click", () => {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      if (!inSingapore(here.lat, here.lng)) return showStatus(OUTSIDE_SG, "error");
+      const found = detectCountry(here.lat, here.lng);
+      if (!found) {
+        return showStatus(
+          "Could not match your location to a country — search for a place instead.",
+          "error"
+        );
+      }
+      if (found.code !== country.code) applyCountry(found);
       coords = here;
       input.value = "";
       updateClearButton();
@@ -275,11 +339,16 @@ $("form").addEventListener("submit", async (event) => {
       showStatus("Pick a suggestion from the dropdown to choose your start point.", "error");
       runSearch(input.value.trim());
     } else {
-      showStatus("Search for a place or postal code, or use your location.", "error");
+      showStatus("Search for a place, or use your location.", "error");
     }
     return;
   }
-  if (!inSingapore(coords.lat, coords.lng)) return showStatus(OUTSIDE_SG, "error");
+  if (!inBounds(coords.lat, coords.lng, country.bbox)) {
+    return showStatus(
+      `That start point is outside ${country.name} — pick a place there or switch country.`,
+      "error"
+    );
+  }
   session = {
     start: coords,
     distanceKm,
@@ -427,10 +496,11 @@ function showResult(start, route) {
 }
 
 // ---- Deep links -------------------------------------------------------------
-// e.g. /?lat=1.3521&lng=103.8198&distance=5 or /?address=560406&distance=6
-// (deep links auto-plan: the link already encodes the intent to run)
+// e.g. /?lat=1.3521&lng=103.8198&distance=5, /?address=560406&distance=6, or
+// /?country=GB&address=Hyde%20Park&distance=5
+// (deep links auto-plan: the link already encodes the intent to run;
+// `params` and the ?country= handling live in the country-selection section)
 
-const params = new URLSearchParams(location.search);
 if (params.has("distance")) $("distance").value = params.get("distance");
 if (params.get("shape") === "straight") {
   document.querySelector('input[name="shape"][value="straight"]').checked = true;
@@ -451,12 +521,18 @@ if (["shape", "elevation", "stay", "sights"].some((k) => params.has(k))) {
 }
 if (params.has("lat") && params.has("lng")) {
   coords = { lat: parseFloat(params.get("lat")), lng: parseFloat(params.get("lng")) };
+  // Coordinate links carry their own location: follow them to the right
+  // country when it wasn't (or was wrongly) given.
+  if (!inBounds(coords.lat, coords.lng, country.bbox)) {
+    const found = detectCountry(coords.lat, coords.lng);
+    if (found) applyCountry(found);
+  }
   $("form").requestSubmit();
 } else if (params.has("address")) {
   const query = params.get("address");
   input.value = query;
   showStatus(`Finding “${query}”…`);
-  geocode(query)
+  geocode(query, country)
     .then((top) => {
       coords = { lat: top.lat, lng: top.lng };
       input.value = top.name;

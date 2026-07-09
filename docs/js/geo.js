@@ -5,9 +5,14 @@ export const METERS_PER_DEG_LAT = 111320;
 // Singapore bounding box: [south, west, north, east].
 export const SG_BOUNDS = [1.13, 103.6, 1.47, 104.1];
 
+// Bounding-box containment; west > east means the box crosses the antimeridian.
+export function inBounds(lat, lng, [south, west, north, east]) {
+  if (lat < south || lat > north) return false;
+  return west <= east ? lng >= west && lng <= east : lng >= west || lng <= east;
+}
+
 export function inSingapore(lat, lng) {
-  const [south, west, north, east] = SG_BOUNDS;
-  return lat >= south && lat <= north && lng >= west && lng <= east;
+  return inBounds(lat, lng, SG_BOUNDS);
 }
 
 export function haversineM(a, b) {

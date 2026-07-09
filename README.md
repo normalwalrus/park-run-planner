@@ -2,7 +2,7 @@
 
 Plan running routes that stick to **park connectors, parks, and footpaths** instead of roadside pavements. Give it where you are (or an address) and how far you want to run, and it returns a loop of roughly that distance plus a **Google Maps walking link** you can follow on your phone.
 
-Built for Singapore: the planner is scoped to Singapore's Park Connector Network (PCN) and parks — the map is locked to the island and locations outside Singapore are rejected. Start-point search is powered by [OneMap](https://www.onemap.gov.sg/) (© Singapore Land Authority): as you type, a dropdown suggests places, addresses, and 6-digit postal codes, with popular running spots (East Coast Park, MacRitchie, Bishan-AMK Park, …) ranked first. Picking a suggestion sets the start point; **Plan my run** kicks off the planning, with a progress bar showing elapsed time against an estimate (longer on the first request for an area, when map data downloads). After a route is shown, **Alternate route** re-plans with the same start and distance while steering away from the segments already used, giving a genuinely different loop each press.
+The web app works worldwide: pick a country from the dropdown (the choice persists in your browser), search for a start point, and plan. **Singapore is the default and the most polished experience** — born on its Park Connector Network (PCN), it keeps the island-locked map, search via [OneMap](https://www.onemap.gov.sg/) (© Singapore Land Authority) covering places, addresses, and 6-digit postal codes, and popular running spots (East Coast Park, MacRitchie, Bishan-AMK Park, …) ranked first in the dropdown. Every other country is searched via [Photon](https://photon.komoot.io/) (© komoot, OpenStreetMap data) — still free and keyless. Picking a suggestion sets the start point; **Plan my run** kicks off the planning, with a progress bar showing elapsed time against an estimate (longer on the first request for an area, when map data downloads). After a route is shown, **Alternate route** re-plans with the same start and distance while steering away from the segments already used, giving a genuinely different loop each press.
 
 **How it's different from Google Maps:** Google's Directions API can't be told to prefer parks. This planner downloads the OpenStreetMap walking network around your start point, re-weights every path segment by "greenness" (park connectors and park paths are cheap, main roads are expensive), searches for a loop of your target distance on that weighted graph, and only then hands the result to Google Maps as a set of waypoints that pin the route onto the green paths.
 
@@ -15,11 +15,16 @@ The hosted version is a static page — the whole routing pipeline (OSM download
 ```
 https://normalwalrus.github.io/park-run-planner/?lat=1.3521&lng=103.8198&distance=5
 https://normalwalrus.github.io/park-run-planner/?address=Bishan%20Park%2C%20Singapore&distance=8
+https://normalwalrus.github.io/park-run-planner/?country=GB&address=Hyde%20Park&distance=5
 ```
+
+`?country=` takes an ISO2 code and defaults to Singapore; bare `?lat`/`lng` links resolve their country automatically.
 
 The static app lives in [`docs/`](docs/) (vanilla ES modules, no build step) and mirrors the Python routing in `app/routing/` — the sections below describe the algorithm both share.
 
 ## Self-host the API (Python)
+
+> The JSON API remains **Singapore-only** for now — worldwide coverage is a static-app feature.
 
 Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python 3.12 is resolved automatically).
 
@@ -114,4 +119,4 @@ python3 -m http.server -d docs 8200   # serve the static app locally
 
 The routing algorithm exists twice — `app/routing/` (Python, for the API) and `docs/js/` (JavaScript, for the static page). Changes to scoring or loop search should be made in both; each has a matching unit-test suite on synthetic graphs.
 
-Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (via Overpass API); search powered by [OneMap](https://www.onemap.gov.sg/) © Singapore Land Authority; elevation from [Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/) (Mapzen Terrarium).
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (via Overpass API); search powered by [OneMap](https://www.onemap.gov.sg/) © Singapore Land Authority (Singapore) and [Photon](https://photon.komoot.io/) (elsewhere); country boundaries from [Natural Earth](https://www.naturalearthdata.com/) (public domain); elevation from [Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/) (Mapzen Terrarium).

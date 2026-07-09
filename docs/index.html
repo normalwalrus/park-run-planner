@@ -70,10 +70,11 @@
   details.advanced[open] summary::before { content: "▾ "; }
   details.advanced summary:hover { color: var(--sign); background: var(--leaf); }
   .advanced-row { display: flex; flex-wrap: wrap; gap: 0.85rem; margin-top: 0.8rem; }
-  input { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 9px;
+  input, select { padding: 0.6rem 0.75rem; border: 1.5px solid var(--line); border-radius: 9px;
           font-size: 0.98rem; font-family: "Overpass", system-ui, sans-serif;
           color: var(--ink); background: #fff; transition: border-color 0.15s; }
-  input:focus { outline: 3px solid rgba(47, 125, 70, 0.25); border-color: var(--pcn); }
+  input:focus, select:focus { outline: 3px solid rgba(47, 125, 70, 0.25); border-color: var(--pcn); }
+  #country { width: 11rem; }
   #address { width: 15rem; }
   #distance { width: 6.2rem; font-variant-numeric: tabular-nums; }
 
@@ -199,8 +200,9 @@
   @media (max-width: 640px) {
     header h1 { font-size: 1.3rem; }
     #address { width: 100%; }
+    #country { width: 100%; }
     .suggest { width: 100%; }
-    form > label:first-child { width: 100%; }
+    form > label:first-child, form > label:nth-child(2) { width: 100%; }
     #map { height: 340px; }
   }
   @media (max-width: 760px) {
@@ -231,14 +233,17 @@
     <span class="mark" aria-hidden="true">🏃</span>
     <div>
       <h1>Park Run Planner</h1>
-      <p>Greenest routes · Singapore park connector network</p>
+      <p>Greenest routes · parks, connectors &amp; waterfronts</p>
     </div>
   </div>
 </header>
 <div class="trail-divider" aria-hidden="true"></div>
 <main>
   <form id="form">
-    <label>Place or postal code (Singapore)
+    <label>Country
+      <select id="country"></select>
+    </label>
+    <label>Place or address
       <span class="suggest">
         <input id="address" placeholder="e.g. Bishan Park or 560406" autocomplete="off"
                role="combobox" aria-expanded="false" aria-controls="suggestions">
@@ -319,7 +324,8 @@
     Runs entirely in your browser — no server, no API keys.
     Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
     (via Overpass API); search powered by <a href="https://www.onemap.gov.sg/">OneMap</a>
-    © Singapore Land Authority; elevation from
+    © Singapore Land Authority (Singapore) and <a href="https://photon.komoot.io/">Photon</a>
+    (elsewhere); elevation from
     <a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles on AWS</a>.
     <a href="https://github.com/normalwalrus/park-run-planner">Source on GitHub</a>.
   </footer>

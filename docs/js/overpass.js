@@ -124,7 +124,7 @@ function isWater(tags) {
 }
 
 // Distance in meters from (lat, lng) to the polyline, equirectangular locally
-// (Singapore sits on the equator, so one scale serves both axes fine).
+// (longitude scaled by cos(lat), so it holds up away from the equator too).
 const M_PER_DEG = 111320;
 function distToPolylineM(lat, lng, points) {
   const scale = Math.cos((lat * Math.PI) / 180);
@@ -181,13 +181,17 @@ export function buildGraph(elements) {
       const points = way.geometry;
       const lats = points.map((p) => p.lat);
       const lngs = points.map((p) => p.lon);
+      // Longitude degrees shrink by cos(lat), so the corridor needs a wider
+      // east-west margin away from the equator.
+      const meanLat = lats.reduce((s, v) => s + v, 0) / lats.length;
+      const nearDegLng = nearDeg / Math.cos((meanLat * Math.PI) / 180);
       waters.push({
         points,
         bbox: [
           Math.min(...lats) - nearDeg,
-          Math.min(...lngs) - nearDeg,
+          Math.min(...lngs) - nearDegLng,
           Math.max(...lats) + nearDeg,
-          Math.max(...lngs) + nearDeg,
+          Math.max(...lngs) + nearDegLng,
         ],
       });
     }

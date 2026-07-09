@@ -130,6 +130,41 @@ test("edges near a river are marked green, distant ones are not", () => {
   assert.equal(farEdge.green, false);
 });
 
+test("waterside detection keeps its width at high latitudes", () => {
+  // At 60°N a longitude degree is only ~55.7 km, so a 40 m corridor needs a
+  // wider east-west bbox margin than at the equator.
+  const elements = [
+    {
+      // river running west-east at lat 60
+      type: "way",
+      nodes: [50, 51],
+      geometry: [
+        { lat: 60.0, lon: 10.0 },
+        { lat: 60.0, lon: 10.004 },
+      ],
+      tags: { waterway: "river" },
+    },
+    {
+      // residential chain heading east: first segment ~30 m past the river's
+      // end, the last ~70 m past it
+      type: "way",
+      nodes: [1, 2, 3, 4],
+      geometry: [
+        { lat: 60.0, lon: 10.0045 },
+        { lat: 60.0, lon: 10.00458 },
+        { lat: 60.0, lon: 10.0052 },
+        { lat: 60.0, lon: 10.00528 },
+      ],
+      tags: { highway: "residential" },
+    },
+  ];
+  const graph = buildGraph(elements);
+  const nearEdge = graph.adj.get(1).find((e) => e.to === 2);
+  const farEdge = graph.adj.get(4).find((e) => e.to === 3);
+  assert.equal(nearEdge.green, true); // ~30 m east of the water
+  assert.equal(farEdge.green, false); // ~70 m east of the water
+});
+
 test("loadGraph fails over to the next mirror when the first errors", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
