@@ -227,11 +227,12 @@ input.addEventListener("keydown", (event) => {
 input.addEventListener("blur", () => setTimeout(closeSuggestions, 150));
 
 // ---- Country selection --------------------------------------------------------
+// A type-ahead combobox over COUNTRIES, mirroring the place-search dropdown.
 
-const countrySelect = $("country");
-countrySelect.innerHTML = COUNTRIES.map(
-  (c) => `<option value="${c.code}">${c.name}</option>`
-).join("");
+const countryInput = $("country");
+const countryListEl = $("country-list");
+let countryMatches = [];
+let countryActive = -1;
 
 function storedCountry() {
   try {
@@ -252,7 +253,7 @@ function applyCountry(entry) {
   } catch {
     // private mode — the choice just won't persist
   }
-  countrySelect.value = entry.code;
+  countryInput.value = entry.name;
   input.placeholder = entry.code === "SG" ? "e.g. Bishan Park or 560406" : "e.g. Hyde Park";
   if (entry.code === "SG") {
     // The historical island lock: keeps the SG experience exactly as before.
@@ -273,16 +274,105 @@ function applyCountry(entry) {
 
 applyCountry(country);
 
-countrySelect.addEventListener("change", () => {
-  const entry = countryByCode(countrySelect.value);
-  if (!entry || entry.code === country.code) return;
+function filterCountries(query) {
+  const wanted = query.trim().toLowerCase();
+  if (!wanted) return COUNTRIES;
+  return COUNTRIES.filter(
+    (c) => c.name.toLowerCase().includes(wanted) || c.code.toLowerCase() === wanted
+  );
+}
+
+function renderCountryList() {
+  if (!countryMatches.length) return closeCountryList();
+  countryListEl.innerHTML = countryMatches
+    .map(
+      (c, i) => `
+      <li role="option" aria-selected="${i === countryActive}" data-i="${i}"
+          class="${i === countryActive ? "active" : ""}">
+        <b>${c.name}</b>
+      </li>`
+    )
+    .join("");
+  countryListEl.style.display = "block";
+  countryInput.setAttribute("aria-expanded", "true");
+  countryListEl.querySelector("li.active")?.scrollIntoView({ block: "nearest" });
+}
+
+function closeCountryList() {
+  countryMatches = [];
+  countryActive = -1;
+  countryListEl.style.display = "none";
+  countryInput.setAttribute("aria-expanded", "false");
+}
+
+function pickCountry(index) {
+  const entry = countryMatches[index];
+  if (!entry) return;
+  closeCountryList();
+  countryInput.value = entry.name;
+  countryInput.blur();
+  if (entry.code === country.code) return;
   applyCountry(entry);
   coords = null;
   input.value = "";
   updateClearButton();
   closeSuggestions();
   card.hidden = true;
+}
+
+countryInput.addEventListener("input", () => {
+  countryMatches = filterCountries(countryInput.value);
+  countryActive = -1;
+  renderCountryList();
 });
+
+// Focus (or a click while already focused, e.g. after Escape) opens the full
+// list with the text pre-selected, so typing filters from scratch and
+// clicking away keeps the current choice.
+function openCountryList() {
+  countryInput.select();
+  countryMatches = COUNTRIES;
+  countryActive = COUNTRIES.findIndex((c) => c.code === country.code);
+  renderCountryList();
+}
+
+countryInput.addEventListener("focus", openCountryList);
+countryInput.addEventListener("click", () => {
+  if (countryListEl.style.display !== "block") openCountryList();
+});
+
+countryInput.addEventListener("keydown", (event) => {
+  if (!countryMatches.length) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    countryActive = (countryActive + step + countryMatches.length) % countryMatches.length;
+    renderCountryList();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    pickCountry(countryActive >= 0 ? countryActive : 0);
+  } else if (event.key === "Escape") {
+    closeCountryList();
+    countryInput.value = country.name;
+  }
+});
+
+// mousedown (not click) so selection beats the input's blur.
+countryListEl.addEventListener("mousedown", (event) => {
+  const item = event.target.closest("li[data-i]");
+  if (item) {
+    event.preventDefault();
+    pickCountry(Number(item.dataset.i));
+  }
+});
+
+// Free text that isn't a pick reverts to the selected country.
+countryInput.addEventListener("blur", () =>
+  setTimeout(() => {
+    closeCountryList();
+    countryInput.value = country.name;
+  }, 150)
+);
 
 // ---- Location + planning ----------------------------------------------------
 

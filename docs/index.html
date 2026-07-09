@@ -104,16 +104,19 @@
            background: none; border: 0; padding: 0.18rem 0.5rem; font-size: 0.9rem;
            color: var(--moss); cursor: pointer; border-radius: 999px; }
   #clear:hover { color: var(--sign); background: var(--leaf); }
-  #suggestions { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 1100;
+  #suggestions, #country-list { display: none; position: absolute; top: calc(100% + 6px);
+                 left: 0; z-index: 1100;
                  width: max(100%, 23rem); max-width: 82vw; margin: 0; padding: 0.35rem;
                  list-style: none; background: var(--card); border: 1px solid var(--line);
                  border-radius: 12px; box-shadow: 0 14px 34px rgba(14, 59, 44, 0.18); }
-  #suggestions li { padding: 0.5rem 0.7rem; border-radius: 8px; cursor: pointer;
+  #country-list { width: max(100%, 14rem); max-height: 16rem; overflow-y: auto; }
+  #suggestions li, #country-list li { padding: 0.5rem 0.7rem; border-radius: 8px; cursor: pointer;
                     font-family: "Overpass", system-ui, sans-serif; font-weight: 400;
                     text-transform: none; letter-spacing: 0; color: var(--ink); }
-  #suggestions li b { display: block; font-size: 0.92rem; font-weight: 700; }
-  #suggestions li small { color: var(--moss); font-size: 0.76rem; }
-  #suggestions li.active, #suggestions li:hover { background: var(--leaf); }
+  #suggestions li b, #country-list li b { display: block; font-size: 0.92rem; font-weight: 700; }
+  #suggestions li small, #country-list li small { color: var(--moss); font-size: 0.76rem; }
+  #suggestions li.active, #suggestions li:hover,
+  #country-list li.active, #country-list li:hover { background: var(--leaf); }
 
   /* Status card: the progress bar is a trail with a runner on it. */
   #status-card { margin: 1rem 0; padding: 0.95rem 1.2rem 1.05rem; background: var(--card);
@@ -241,7 +244,11 @@
 <main>
   <form id="form">
     <label>Country
-      <select id="country"></select>
+      <span class="suggest">
+        <input id="country" autocomplete="off" role="combobox" aria-expanded="false"
+               aria-controls="country-list">
+        <ul id="country-list" role="listbox"></ul>
+      </span>
     </label>
     <label>Place or address
       <span class="suggest">

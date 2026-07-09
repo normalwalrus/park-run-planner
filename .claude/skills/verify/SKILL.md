@@ -32,6 +32,7 @@ const browser = await puppeteer.launch({
 - **Geolocation**: `browser.createBrowserContext()` + `context.overridePermissions(BASE, ["geolocation"])` + `page.setGeolocation(...)`, then click `#locate`.
 - **Real network is fine**: OneMap, Photon, Overpass, and terrain tiles are all keyless. A full non-SG plan (deep link `?country=GB&lat=51.5073&lng=-0.1657&distance=4`) completes in ~25 s; wait on `#stat-dist` changing from "–" with a generous timeout (300 s).
 - Country picker state persists in `localStorage["prp:country"]` — `localStorage.clear()` between scenarios that assume the SG default.
+- `#country` is a type-ahead **input** (not a select): click it, type a fragment, then pick from `#country-list` (same stale-innerHTML caveat as `#suggestions`). Its value shows the country *name* ("United Kingdom"), not the code.
 - `/favicon.ico` 404s on the plain http.server — pre-existing noise, ignore.
 
 ## Flows worth driving
